@@ -1,2 +1,2 @@
-# b2b-receivables-intelligence
+# B2B-receivables-intelligence
 AI-powered B2B receivables decision engine that predicts payment behavior, evaluates Promise-to-Pay credibility, optimizes recovery interventions, and measures incremental revenue impact.
