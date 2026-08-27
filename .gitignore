@@ -147,6 +147,10 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# Postgres dumps (transferred out-of-band, never committed)
+*.dump
+*.dmp
+
 # Environments
 .env
 .envrc

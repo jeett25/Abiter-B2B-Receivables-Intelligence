@@ -1,0 +1,26 @@
+{
+  "reliable_payer_wait": {
+    "invoice_number": "INV-10330",
+    "expected_action": "wait"
+  },
+  "chronic_late_escalate": {
+    "invoice_number": "INV-10184",
+    "expected_action": "escalate"
+  },
+  "promise_breaker_reassess": {
+    "invoice_number": "INV-10677",
+    "expected_action": "reassess"
+  },
+  "low_value_stop": {
+    "invoice_number": "INV-10040",
+    "expected_action": "stop"
+  },
+  "high_value_act": {
+    "invoice_number": "INV-10706",
+    "expected_action": "act"
+  },
+  "already_paid_suppress": {
+    "invoice_number": "INV-10298",
+    "expected_action": "stop_suppress"
+  }
+}
