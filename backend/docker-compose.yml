@@ -1,3 +1,5 @@
+name: b2b-receivables-intelligence
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
