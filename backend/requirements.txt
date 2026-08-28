@@ -10,3 +10,5 @@ pandas
 numpy
 faker
 pytest
+xgboost
+scikit-learn

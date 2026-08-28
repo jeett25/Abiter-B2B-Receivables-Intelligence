@@ -151,6 +151,9 @@ activemq-data/
 *.dump
 *.dmp
 
+# ML model artifacts (joblib models + metrics.json per run) -- regenerable, not committed
+backend/app/ml/artifacts/
+
 # Environments
 .env
 .envrc

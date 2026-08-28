@@ -8,7 +8,7 @@ Submission for **Razorpay AI Buildathon 2026, Track 03 (AI Revenue Recovery)**. 
 
 Full architecture spec (11-table Postgres+pgvector schema, XGBoost recovery/PTP models, LangGraph orchestration, deterministic policy gate, attribution engine, Next.js frontend) was provided by the user as a markdown doc at the start of the project — not stored in the repo, but its content is what everything below implements. Key sections referenced throughout this file: §4 (data model), §5 (ML layer), §6 (synthetic dataset), §9 (five completeness gaps), §10 (7-day build plan).
 
-7-day build plan, ending with a demo video submission. **Today (2026-08-27) is Day 1.**
+7-day build plan, ending with a demo video submission. Day 1 (2026-08-27) and Day 2 (2026-08-28) are both done. **Day 3 starts next session.**
 
 ## Repo layout
 
@@ -19,15 +19,26 @@ b2b-receivables-intelligence/
     app/
       core/            config.py (pydantic-settings), db.py (SQLAlchemy engine/session/Base)
       models/          11 SQLAlchemy models + enums.py (see Schema below)
+      ml/              Day-2 feature engineering + Recovery/PTP models -- see "Day 2: ML layer" below
+        config.py        HORIZON_DAYS, recency windows, split ratios, calibration bounds, SEED -- no synthetic/ import
+        features.py      DB->pandas, is_resolved_before(), rolling+recency features, outstanding_ratio
+        labels.py        recovery_label(), build_ptp_table(), T-reconstruction, class-balance diagnostics
+        splits.py        Experiment A (time-based, 4-way) and B (customer-based) splits
+        evaluate.py      classification_metrics(), reliability_table(), archetype_sanity_check()
+        train_recovery.py  fit + isotonic-calibrate + evaluate recovery model, CLI entry
+        train_ptp.py       fit + Platt-calibrate + evaluate PTP model, CLI entry
+        persist.py         joblib save/load + FeatureSnapshot DB writer, CLI entry
+        DECISIONS.md       evidence-backed modeling decisions log -- read this before changing any ML default
+        artifacts/         gitignored -- .joblib models + metrics.json, regenerate via `python -m app.ml.persist`
     alembic/           migrations (env.py hand-authored, not `alembic init`-generated)
     synthetic/
       archetypes.py    8 archetypes' ground-truth parameters
       generator.py     deterministic dataset generator (SEED=42)
       validators.py    validation suite + dataset summary + reproducibility fingerprint
       demo_fixtures.py selects/pins 6 curated demo invoices -> demo_fixtures.json
-    tests/             pytest suite (DB foundation + generator/validation tests)
+    tests/             pytest suite (DB foundation + generator/validation + ML tests, 30 total)
     docker-compose.yml Postgres+pgvector container definition
-    requirements.txt   Day-1 Python deps (see exact versions below)
+    requirements.txt   Python deps (see exact versions below) -- now includes xgboost, scikit-learn (Day 2)
     .env.example / .env (.env gitignored, never committed)
   frontend/            empty placeholder — Next.js app lands later (per the 7-day plan, Day 3 scaffold / Day 6 wiring)
 ```
@@ -36,6 +47,7 @@ b2b-receivables-intelligence/
 
 - **Python 3.14.5**, venv at `backend/venv` (created via `python -m venv venv`, not `uv` — user's explicit preference despite `uv` being installed). Installed via `pip install -r requirements.txt`, not pinned in the committed `requirements.txt` (it lists bare package names) — actual installed versions, confirmed from `venv/Lib/site-packages/*.dist-info`:
   - fastapi 0.141.1, uvicorn 0.52.4, sqlalchemy 2.0.52, alembic 1.19.1, psycopg 3.3.4 (+psycopg-binary 3.3.4), pgvector (python pkg) 0.5.0, pydantic 2.13.4 / pydantic-settings 2.15.0, python-dotenv 1.2.3, pandas 3.0.5, numpy 2.5.2, faker 40.37.0, pytest 9.1.1.
+  - Day 2 additions: xgboost 3.4.1, scikit-learn 1.9.0.
   - If reinstalling, prefer running `pip freeze > requirements.txt` afterward to lock these for real reproducibility — hasn't been done yet, so the checked-in file stays intentionally unpinned for now.
 - **PostgreSQL 18.4** also runs natively as a Windows service on port **5432** — this project does **not** use it. Native Postgres has no pgvector available for Windows (no official binary, and this machine has no Visual Studio/C++ build tools to compile it from source).
 - **This project's Postgres runs in Docker instead:** container `receivables-postgres`, image `pgvector/pgvector:pg16` (reused an already-cached image from an unrelated prior project rather than pulling pg18 — pgvector 0.8.2 either way), host port **5433**, db `receivables_ai`. `docker-compose.yml` pins `name: b2b-receivables-intelligence` explicitly so running compose commands from `backend/` doesn't derive a different project name and orphan the container/volume.
@@ -57,6 +69,15 @@ To regenerate the dataset from scratch (safe — truncates and rebuilds atomical
 python -m synthetic.generator
 python -m synthetic.demo_fixtures
 python -m synthetic.validators
+```
+
+To rerun the Day-2 ML pipeline (read-only against the dataset above, safe to rerun anytime):
+```powershell
+python -m app.ml.labels           # horizon/class-balance diagnostics + PTP class-balance report
+python -m app.ml.splits           # split size/date-range diagnostics for both tables
+python -m app.ml.train_recovery   # trains + calibrates + evaluates + archetype sanity check
+python -m app.ml.train_ptp        # same, for PTP
+python -m app.ml.persist          # retrains both, saves .joblib + metrics.json, writes FeatureSnapshot rows
 ```
 
 ## Schema (11 tables — architecture doc §4)
@@ -120,17 +141,41 @@ Checks the **current database state**, not generator internals — 7 checks (ref
 - **Hand over install/setup commands as text for the user to run themselves** (venv creation, `pip install`, `alembic upgrade`, running the generator) rather than executing them directly — the user runs them and reports output/errors back.
 - **One step at a time** — implement a discrete piece, stop, let the user check/run it, then continue to the next.
 - Plain `python -m venv venv` + `pip install -r requirements.txt` workflow, not `uv` (even though installed).
+- **Main-task workflow (plan → approve → code → report)**, for any substantial/main task (e.g. a feature-engineering module, a model-training script, a splits implementation — not small mechanical steps like installing a dependency or scaffolding an empty package):
+  1. Present a short design plan in chat (what will be built, key definitions/decisions, function/file shape) *before* writing any code.
+  2. Wait for explicit user approval — do not write the main code on an ambiguous "ok" that's really just acknowledging the process, if it's unclear whether the plan itself was approved, ask.
+  3. After the code is written, report: which files were added/changed and what each one's main contents/responsibilities are, then what (if anything) the user needs to run manually, and what tests to run/review.
+  - Small tasks (installs, trivial scaffolding, one-line config edits) skip this — just do them and report briefly.
 
-## ML methodology requirements for Day 2 (specified in advance, not yet implemented)
+## Day 2: ML layer (`backend/app/ml/`) — complete
 
-- **Customer-level train/test split (80/20 by customer, never by row)** — split customers first, take all their invoices with them, to prevent per-customer aggregate-feature leakage.
-- **Time-based holdout** — train on months 1–9 of the historical pool, evaluate on months 10–11 (the pool's 12-month window was specifically sized for this). Every rolling/aggregate feature must only use data available as of that invoice's own `issue_date` — no future leakage.
+Turned the 9,000-invoice historical pool into a leakage-safe feature table and trained two calibrated XGBoost models: **Recovery Probability** (will this invoice pay back within a horizon?) and **Promise-to-Pay / PTP** (will a given payment promise be kept?). Full design rationale, every evidence-backed decision, and every bug found is in **`backend/app/ml/DECISIONS.md` — read it before changing any ML default**; this section is a summary, not a replacement.
+
+**Methodology (both models):**
+- **Point-in-time safety**: every feature is computed strictly as of a cutoff — `due_date` for recovery, `T` (reconstructed promise-creation moment, `T = max(recovery_actions.timestamp)` for that invoice — exact given the generator's construction, not an approximation) for PTP. `is_resolved_before()` in `features.py` is the single mechanism enforcing this; a written-off invoice only counts as "known" 150 days past its own due date (conservative bound), a paid one only once `paid_at < cutoff`.
+- **Two experiments, not one**: Experiment A (time-based: months 1–9 train / 10–11 test, boundary derived dynamically from the data's own date range, never hardcoded) is the calibrated, production-relevant split. Experiment B (customer-based: 80/20 seeded customer split, no customer overlap) measures generalization to a customer never seen in training — deliberately uncalibrated (scope cut) and consistently shows a larger fit-vs-test gap than A, which is the *expected*, correct finding (unseen-customer generalization is a harder task), not a bug.
+- **`app/ml/DECISIONS.md` covers**, in evidence-backed detail: why `HORIZON_DAYS=60` (not the original 90 — checked against real data, plus a genuine business rationale), why the class-balance gate applies only to the pooled rate (per-archetype imbalance is by construction — `reliable_payer` etc. are *designed* to be extreme), why `scale_pos_weight` was dropped (controlled comparison showed it hurts calibration-relevant metrics with zero ranking benefit), why calibrated probabilities are clipped to `[0.01, 0.99]` (isotonic regression can output literal 0.0/1.0 on a sparse calibration tail — confirmed live, catastrophic under log loss, and this probability feeds Day 3's `EV(a) = P(recovery)*Amount - Cost - Friction` where a literal 0/1 is a correctness bug, not just a metric artifact), and a real bug found + fixed (`customer_invoice_frequency` exploding to millions for the ~14% of rows where a customer's `relationship_start_date` — drawn independently of `issue_date` in the Day-1 generator — falls after an invoice's own cutoff; both affected features are now `NaN` in that case, not a fabricated number).
+
+**Final numbers** (Experiment A test set unless noted; see `DECISIONS.md` for the full tables):
+- **Recovery**: A raw/calibrated ROC-AUC ≈0.829, PR-AUC ≈0.92, Brier ≈0.116-0.117; B (unseen customers) ROC-AUC ≈0.803. `amount` and `prior_avg_delay_days` dominate feature importances in both experiments.
+- **PTP**: A raw/calibrated ROC-AUC ≈0.835, PR-AUC ≈0.89; broken-promise detection at threshold 0.5: precision 0.767, recall 0.554, F1 0.643; B ROC-AUC ≈0.808.
+- **Archetype sanity check** (predicted vs. observed vs. hidden ground truth, both models): recovery's table is fully explained — 6/7 archetypes show intervention-uplift (observed/predicted above the organic constant, expected), `strategic_enterprise` is low because its 60-90d organic delay falls mostly outside the 60-day horizon (also expected, logged). PTP has one genuine, investigated-not-guessed limitation: `promise_breaker`'s keep rate is overpredicted (0.40 vs. true 0.20) because the model's dominant feature (`prior_avg_delay_days`) doesn't flag this archetype while the feature that would (`prior_promise_kept_rate`) is under-weighted and ~22% missing — the direct cost of correctly excluding `confidence_score` (a near-direct leak of the ground truth). Logged as a known limitation, not fixed, on explicit instruction.
+
+**Testing**: 30 pytest tests total (12 from Day 1 + 18 new), across `test_ml_features.py`, `test_ml_labels.py`, `test_ml_splits.py` — includes the full leakage-critical guard set: `is_resolved_before` correctness, same-invoice self-exclusion, future-event regression (build a feature vector, insert a row dated after the cutoff, recompute, assert byte-identical — for both the recovery and PTP cutoff paths), T-reconstruction correctness (row-level, not aggregate), and the `customer_invoice_frequency` bug's regression test. All green.
+
+**Explicitly skipped/deferred**: expected-payment-date regression (a third, separate model — nothing downstream depends on it) skipped outright. SHAP (richer per-prediction explanations, on top of the `feature_importances_` already exported unconditionally by both training scripts) deferred as optional — do only if there's spare time later, not required for Day 3+.
+
+**Customer-level split (Experiment B) and time-based holdout (Experiment A)** — the two ML methodology requirements specified before Day 2 started — are both implemented exactly as designed above, in `splits.py`.
 
 ## Day-1 (work PC) checklist status
 
 Done: GitHub/SSH/git-identity setup, project structure (backend/frontend split), `.env.example`, Docker Postgres+pgvector, all 11 tables + migrations, synthetic generator (all entity types), validation suite (all 7 checks + reproducibility), demo fixtures, pytest suite (12 tests, all passing).
 
-Left today: final commit/push of this CLAUDE.md itself (do after this file is reviewed), then the **Day-1 home-PC leg** — see below.
+## Day-2 checklist status
+
+Done: `app/ml/` package (config, features, labels, splits, evaluate, train_recovery, train_ptp, persist), recovery model trained+calibrated+sanity-checked, PTP model trained+calibrated+sanity-checked, future-leakage regression tests, model artifacts + FeatureSnapshot rows persisted, full pytest suite green (30 tests), `DECISIONS.md` written. See "Day 2: ML layer" above for the full summary.
+
+Explicitly not done (by decision, not oversight): expected-payment-date regression model (skipped), SHAP explanations (deferred/optional).
 
 ## Tonight: Day-1 home-PC transfer
 
@@ -141,6 +186,6 @@ Per the user's own plan: prove the Day-1 foundation moves between environments v
 3. At home: clone/pull the repo, stand up the same Docker Postgres setup (`pgvector/pgvector:pg16`, port 5433 — or pull pg18 fresh there, doesn't need to match this machine's image choice), create an empty `receivables_ai` db with pgvector enabled, then `pg_restore` the dump directly — this restores schema + data in one shot. Don't re-run `alembic upgrade head` or the generator to recreate it; that's a different, separate check.
 4. Separately (per the checklist's own "Final local verification" section), re-run `python -m synthetic.generator` at home with the same `SEED=42` and confirm the fingerprint matches what was produced at work — this is the *code*-portability proof, independent of whether the dump restored correctly.
 
-## What's next after tonight (remaining 6-day plan, for future-session context)
+## What's next (remaining 5-day plan, for future-session context)
 
-Day 2: feature engineering, XGBoost recovery-probability + PTP models, calibration, time-aware evaluation per the ML methodology section above. Day 3: hybrid BM25+pgvector retrieval, Economics Engine, Policy/Safety Gate, Next.js frontend scaffold (3 screens). Day 4: LangGraph orchestration, account state machine, action/tool layer incl. real Razorpay test-mode Payment Links. Day 5: attribution engine (randomized holdout), dashboard API, deploy backend+DB, `seed_demo.py`. Day 6: frontend wiring, deploy frontend, deliberate failure-handling demo. Day 6 evening–7: README, pitch deck, video script/recording, submission.
+Day 1 and Day 2 are both done (see their sections above). **Day 3 next**: hybrid BM25+pgvector retrieval, Economics Engine (`EV(a) = P(recovery|a,x) * Amount - Cost - Friction` — the calibrated, clipped recovery/PTP probabilities from Day 2 feed directly into this), Policy/Safety Gate, Next.js frontend scaffold (3 screens), and the pgvector embedding-column migration deferred from Day 1. Day 4: LangGraph orchestration, account state machine, action/tool layer incl. real Razorpay test-mode Payment Links. Day 5: attribution engine (randomized holdout), dashboard API, deploy backend+DB, `seed_demo.py`. Day 6: frontend wiring, deploy frontend, deliberate failure-handling demo. Day 6 evening–7: README, pitch deck, video script/recording, submission.
