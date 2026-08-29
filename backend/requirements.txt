@@ -12,3 +12,5 @@ faker
 pytest
 xgboost
 scikit-learn
+fastembed
+rank-bm25

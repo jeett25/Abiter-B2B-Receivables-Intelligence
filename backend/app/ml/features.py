@@ -289,3 +289,44 @@ def build_feature_table(engine: Engine | None = None) -> pd.DataFrame:
             rows.append(row)
 
     return pd.DataFrame(rows)
+
+
+def build_live_feature_table(engine: Engine | None = None) -> pd.DataFrame:
+    tables = load_raw_tables(engine)
+    invoices = tables["invoices"]
+    customers = tables["customers"].set_index("id")
+    merchants = tables["merchants"].set_index("id")
+    payments = tables["payments"]
+    promises = tables["promises"]
+    actions = tables["actions"]
+
+    rows = []
+    for customer_id, group in invoices.groupby("customer_id"):
+        live = group[group["status"] == InvoiceStatus.OPEN.value]
+        if live.empty:
+            continue
+
+        customer_row = customers.loc[customer_id]
+        merchant_row = merchants.loc[customer_row["merchant_id"]]
+        relationship_start = customer_row["relationship_start_date"]
+
+        for _, invoice_row in live.iterrows():
+            cutoff = invoice_row["due_date"]
+
+            prior_resolved = prior_resolved_invoices(group, invoice_row["id"], cutoff)
+            prior_issued = prior_issued_invoices(group, invoice_row["id"], cutoff)
+
+            row = {
+                "invoice_id": invoice_row["id"],
+                "customer_id": customer_id,
+                "merchant_id": customer_row["merchant_id"],
+                "invoice_number": invoice_row["invoice_number"],
+                "due_date": invoice_row["due_date"],
+                "issue_date": invoice_row["issue_date"],
+                "status": invoice_row["status"],
+            }
+            row.update(invoice_static_features(invoice_row, customer_row, merchant_row, cutoff, payments))
+            row.update(rolling_features(prior_resolved, prior_issued, promises, actions, cutoff, relationship_start))
+            rows.append(row)
+
+    return pd.DataFrame(rows)

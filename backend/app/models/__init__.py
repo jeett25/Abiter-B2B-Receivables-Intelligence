@@ -1,5 +1,6 @@
 from app.models.account_state import AccountState
 from app.models.attribution_record import AttributionRecord
+from app.models.case_embedding import CaseEmbedding
 from app.models.customer import Customer
 from app.models.decision_log import DecisionLog
 from app.models.feature_snapshot import FeatureSnapshot
@@ -13,6 +14,7 @@ from app.models.recovery_action import RecoveryAction
 __all__ = [
     "AccountState",
     "AttributionRecord",
+    "CaseEmbedding",
     "Customer",
     "DecisionLog",
     "FeatureSnapshot",

@@ -267,3 +267,43 @@ genuinely corrupted (not just cosmetically off), and the `FeatureSnapshot`
 rows written to the DB before this fix stored garbage values for ~14% of
 rows. All artifacts and snapshots re-generated after the fix (subtask 13
 re-run).
+
+## Day 3 addition: `build_live_feature_table()` -- widened customer grouping, traced and tested against re-leaking
+
+Day 3's Decision Service needed to score the 900 live (open) invoices with
+the same recovery model, which required computing the same features for a
+population `build_feature_table()` never covers (it filters to
+`HISTORICAL_STATUSES` only). Added `build_live_feature_table()` in
+`features.py`, reusing every existing helper (`invoice_static_features`,
+`rolling_features`, `prior_resolved_invoices`, `prior_issued_invoices`)
+unchanged, same cutoff=`due_date` convention as the historical path -- a live
+invoice is scored "as of the day it became due", the exact reference frame
+the model was trained on, regardless of how much real time has passed since.
+
+One deliberate difference from `build_feature_table()`: each customer's
+"other invoices" group is drawn from their **full** invoice history
+(historical + other live siblings), not `HISTORICAL_STATUSES` only. A
+customer can genuinely have more than one live invoice open at once, and an
+earlier-issued sibling should count toward cadence/prior-history features
+exactly as it would in production, even though it isn't itself resolved.
+
+This is exactly the kind of change that could reopen a leakage path --
+traced directly rather than assumed safe: `prior_resolved_invoices`
+structurally excludes anything not PAID/WRITTEN_OFF regardless of dates
+(`is_resolved_before`'s fallthrough returns `False` for any other status),
+and `prior_issued_invoices` only ever checks `issue_date < cutoff`, never a
+sibling's own `due_date` or resolution status -- so a live sibling can never
+leak in via either function, by construction. Proven with a direct
+adversarial test (`test_live_sibling_grouping_includes_earlier_issued_excludes_later_issued`
+in `test_ml_features.py`), not just the trace: a sibling issued before the
+target's cutoff but due *after* it is confirmed counted (positive control),
+and a sibling issued *after* the target's cutoff is confirmed excluded even
+though it sits in the same widened pool (the actual adversarial check).
+
+Single-row scoring through the trained model (a new usage pattern -- one
+live invoice at a time, not a batch of thousands) was also verified, not
+assumed: XGBoost's categorical handling matches `merchant_segment`/
+`merchant_industry`/`customer_segment`/`customer_industry` by value name, not
+code position, confirmed by comparing predictions for isolated single-row
+frames against the same rows scored in full context (identical to machine
+precision) before relying on it in `app/decision/service.py`.

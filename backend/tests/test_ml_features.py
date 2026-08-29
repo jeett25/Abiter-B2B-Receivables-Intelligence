@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from app.core.db import engine
 from app.ml.features import (
     build_feature_table,
+    build_live_feature_table,
     invoice_static_features,
     is_resolved_before,
     prior_issued_invoices,
@@ -183,6 +184,51 @@ def test_no_historical_invoice_left_in_disputed_or_promised_status(db_session):
     assert count == 0
 
 
+def test_live_sibling_grouping_includes_earlier_issued_excludes_later_issued():
+    """Adversarial test for build_live_feature_table()'s widened grouping
+    (full invoice history, not HISTORICAL_STATUSES only -- see its docstring).
+    Invoice A is being scored at cutoff=A.due_date. Sibling B is a LIVE (open)
+    invoice issued before A's cutoff but with a LATER due_date than A's --
+    must be counted (positive control: proves widening the pool actually
+    works, not just that it's harmless). Sibling C is a live invoice issued
+    AFTER A's cutoff -- must be excluded (the actual adversarial check: a
+    same-batch live sibling must not leak forward just because it exists in
+    the same widened pool)."""
+    customer_invoices = pd.DataFrame(
+        [
+            {
+                "id": "inv-a", "customer_id": "cust-1",
+                "due_date": pd.Timestamp("2024-03-01"), "issue_date": pd.Timestamp("2024-02-01"),
+                "status": "open", "paid_at": pd.NaT, "amount": 10000.0,
+            },
+            {
+                # issued before A's cutoff, but due AFTER A -- must still count
+                "id": "inv-b", "customer_id": "cust-1",
+                "due_date": pd.Timestamp("2024-06-01"), "issue_date": pd.Timestamp("2024-01-15"),
+                "status": "open", "paid_at": pd.NaT, "amount": 8000.0,
+            },
+            {
+                # issued AFTER A's cutoff -- must be excluded regardless of it
+                # being in the same widened (historical + live) pool
+                "id": "inv-c", "customer_id": "cust-1",
+                "due_date": pd.Timestamp("2024-04-01"), "issue_date": pd.Timestamp("2024-03-15"),
+                "status": "open", "paid_at": pd.NaT, "amount": 9000.0,
+            },
+        ]
+    )
+    cutoff = pd.Timestamp("2024-03-01")  # inv-a's own due_date
+
+    prior_resolved = prior_resolved_invoices(customer_invoices, "inv-a", cutoff)
+    prior_issued = prior_issued_invoices(customer_invoices, "inv-a", cutoff)
+
+    # Live siblings never count toward prior_resolved regardless of dates --
+    # is_resolved_before's fallthrough excludes anything not PAID/WRITTEN_OFF.
+    assert prior_resolved.empty
+
+    # inv-b counted (issued before cutoff), inv-c excluded (issued after).
+    assert list(prior_issued["id"]) == ["inv-b"]
+
+
 def test_build_feature_table_row_count_matches_historical_invoice_count(db_session):
     historical_count = db_session.execute(
         select(func.count())
@@ -192,6 +238,15 @@ def test_build_feature_table_row_count_matches_historical_invoice_count(db_sessi
 
     table = build_feature_table(engine)
     assert len(table) == historical_count
+
+
+def test_build_live_feature_table_row_count_matches_open_invoice_count(db_session):
+    open_count = db_session.execute(
+        select(func.count()).select_from(Invoice).where(Invoice.status == InvoiceStatus.OPEN)
+    ).scalar_one()
+
+    table = build_live_feature_table(engine)
+    assert len(table) == open_count
 
 
 def _feature_vector_for(invoices, promises, actions, payments, target_id, cutoff, customer_row, merchant_row) -> dict:
