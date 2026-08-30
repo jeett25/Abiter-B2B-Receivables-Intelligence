@@ -121,10 +121,17 @@ def calibrated_predict_proba(model: XGBClassifier, calibrator: LogisticRegressio
     -- same operational floor/ceiling as the recovery model (DECISIONS.md).
     Platt/sigmoid is smooth and much less prone to exact 0/1 than isotonic's
     step function, but the clip is cheap insurance and the same
-    downstream-economics argument applies regardless of calibration method."""
+    downstream-economics argument applies regardless of calibration method.
+
+    .astype(np.float64) before the clip -- same fix as
+    train_recovery.py's calibrated_predict_proba, applied here for
+    consistency even though LogisticRegression.predict_proba() is less
+    likely to leak XGBoost's float32 predict_proba() output through than
+    IsotonicRegression.predict() was observed to. See that function's
+    docstring and app/ml/DECISIONS.md for the full root-cause trace."""
     X = prepare_features(df)
     raw_proba = model.predict_proba(X)[:, 1]
-    calibrated_proba = calibrator.predict_proba(raw_proba.reshape(-1, 1))[:, 1]
+    calibrated_proba = calibrator.predict_proba(raw_proba.reshape(-1, 1))[:, 1].astype(np.float64)
     return np.clip(calibrated_proba, CALIBRATED_PROBABILITY_FLOOR, CALIBRATED_PROBABILITY_CEILING)
 
 

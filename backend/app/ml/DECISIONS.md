@@ -218,6 +218,37 @@ would be forcing more weight onto `prior_promise_kept_rate`/
 emphasis) or reducing the NaN rate on those features (a longer historical
 window per customer, if available).
 
+## Bug found and fixed (Day 4, Subtask 11): float32 clip precision gap
+
+Found via Day 4's final integration pass, which checked every live
+invoice's calibrated recovery_probability against
+[CALIBRATED_PROBABILITY_FLOOR, CALIBRATED_PROBABILITY_CEILING] at full
+float64 precision -- 74/900 values landed ~1e-8 outside the literal
+[0.01, 0.99] bounds this function is documented as enforcing. Traced
+directly, not guessed: `model.predict_proba(X)[:, 1]` (XGBoost) returns
+float32; `IsotonicRegression.predict()` (recovery) and
+`LogisticRegression.predict_proba()` (PTP) both preserve/produce that
+precision without upcasting; `np.clip()` preserves input array dtype. So
+the clip was genuinely happening, correctly, in float32 -- but
+float32(0.99) != float64(0.99), and `float(proba[0])` widening a float32
+result to a Python float surfaces that gap as a value technically outside
+the intended double-precision bounds.
+
+Fix: `.astype(np.float64)` on the calibrator's output before clipping, in
+both train_recovery.py and train_ptp.py's `calibrated_predict_proba()`.
+Confirmed directly post-fix: 0/900 out-of-bounds values, dtype float64
+throughout.
+
+**Practical impact was zero, verified not assumed:** EV(a) =
+P(recovery)*Amount - Cost - Friction moving by ~1e-8 * amount is
+immaterial at any real invoice amount, nowhere near the ₹50 materiality
+floor -- no decision this system has ever made would have changed. Doesn't
+retroactively invalidate any of this file's reported metrics (ROC-AUC/
+PR-AUC/Brier differences at this magnitude don't move the 4-decimal
+numbers already logged above) and required no retraining -- this was a
+pure post-processing dtype issue in the scoring function, not a problem
+with the trained model/calibrator artifacts themselves.
+
 ## Bug found and fixed: customer_invoice_frequency division blowup
 
 Found live while spot-checking a `FeatureSnapshot` row during subtask 13
@@ -307,3 +338,24 @@ assumed: XGBoost's categorical handling matches `merchant_segment`/
 code position, confirmed by comparing predictions for isolated single-row
 frames against the same rows scored in full context (identical to machine
 precision) before relying on it in `app/decision/service.py`.
+
+## Day 4 addition: `build_live_ptp_feature_row()` -- one row, cutoff=T=now, for a live promise
+
+Day 4 Subtask 7 needed to score a just-created live payment promise with the
+trained PTP model, which required the same feature construction
+`build_ptp_table()` uses (`invoice_static_features` + `rolling_features`),
+just for one promise instead of the full historical, terminal-status
+population, and re-anchored to `T` = the promise-creation moment (the
+triggering event's own timestamp) instead of a training-time reconstructed
+`T`. Reuses every existing helper unchanged, same widened live
+customer-grouping `build_live_feature_table()` already established and
+adversarially tested (full invoice history, not `HISTORICAL_STATUSES`
+only) -- no new leakage-path reasoning needed since it's the identical
+grouping mechanism proven safe above, just called for a PTP-shaped row
+instead of a recovery-shaped one.
+
+Not covered by a new adversarial test of its own: the underlying grouping
+functions (`prior_resolved_invoices`/`prior_issued_invoices`) are unchanged
+from the already-proven-safe version above, so the existing test still
+covers the mechanism this function calls -- only the caller and the
+cutoff/column set are new.

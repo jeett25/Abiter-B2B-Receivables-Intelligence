@@ -134,10 +134,20 @@ def calibrated_predict_proba(model: XGBClassifier, calibrator: IsotonicRegressio
     probability from finite calibration data should be reported as literally
     certain or impossible, and this recovery probability is meant to feed
     Day 3's EV(a) = P(recovery)*Amount - Cost - Friction, where a literal 0/1
-    would be a correctness problem beyond just this metric. See DECISIONS.md."""
+    would be a correctness problem beyond just this metric. See DECISIONS.md.
+
+    .astype(np.float64) before the clip -- XGBoost's predict_proba() returns
+    float32, and IsotonicRegression.predict() preserves that dtype rather
+    than upcasting, so np.clip() was clipping in float32. float32(0.99) !=
+    float64(0.99), so a value clipped to the float32 ceiling widened to a
+    Python float (float(proba[0])) could land ~1e-8 outside the literal
+    [FLOOR, CEILING] bounds this function is documented as enforcing --
+    found via Day 4's Subtask 11 integration check, zero practical effect
+    (an EV calculation moving by 1e-8 * amount is immaterial), but the
+    clip should hit its documented bounds exactly, not approximately."""
     X = prepare_features(df)
     raw_proba = model.predict_proba(X)[:, 1]
-    calibrated_proba = calibrator.predict(raw_proba)
+    calibrated_proba = calibrator.predict(raw_proba).astype(np.float64)
     return np.clip(calibrated_proba, CALIBRATED_PROBABILITY_FLOOR, CALIBRATED_PROBABILITY_CEILING)
 
 

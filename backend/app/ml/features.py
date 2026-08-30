@@ -291,6 +291,55 @@ def build_feature_table(engine: Engine | None = None) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def build_live_ptp_feature_row(
+    invoice_id,
+    promised_date,
+    source: str,
+    cutoff: pd.Timestamp,
+    engine: Engine | None = None,
+    tables: dict | None = None,
+) -> dict:
+    """One PTP feature row for a single live promise (Day 4, Subtask 7) --
+    mirrors app.ml.labels.build_ptp_table()'s per-row construction
+    (invoice_static_features + rolling_features at cutoff=T), for one
+    just-created live promise instead of the full historical,
+    terminal-status population. Uses the same widened live customer-grouping
+    build_live_feature_table() below already established and adversarially
+    tested (full invoice history, not HISTORICAL_STATUSES only -- a live
+    invoice's customer can have other live siblings that legitimately count
+    toward cadence/prior-history features)."""
+    tables = tables or load_raw_tables(engine)
+    invoices = tables["invoices"]
+    customers = tables["customers"].set_index("id")
+    merchants = tables["merchants"].set_index("id")
+    payments = tables["payments"]
+    promises = tables["promises"]
+    actions = tables["actions"]
+
+    invoice_row = invoices[invoices["id"] == invoice_id].iloc[0]
+    customer_id = invoice_row["customer_id"]
+    customer_row = customers.loc[customer_id]
+    merchant_row = merchants.loc[customer_row["merchant_id"]]
+    group = invoices[invoices["customer_id"] == customer_id]
+
+    prior_resolved = prior_resolved_invoices(group, invoice_id, cutoff)
+    prior_issued = prior_issued_invoices(group, invoice_id, cutoff)
+
+    row = {
+        "invoice_id": invoice_id,
+        "customer_id": customer_id,
+        "merchant_id": customer_row["merchant_id"],
+        "T": cutoff,
+        "promised_date": promised_date,
+        "source": source,
+    }
+    row.update(invoice_static_features(invoice_row, customer_row, merchant_row, cutoff, payments))
+    row.update(
+        rolling_features(prior_resolved, prior_issued, promises, actions, cutoff, customer_row["relationship_start_date"])
+    )
+    return row
+
+
 def build_live_feature_table(engine: Engine | None = None) -> pd.DataFrame:
     tables = load_raw_tables(engine)
     invoices = tables["invoices"]

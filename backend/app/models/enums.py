@@ -51,15 +51,9 @@ class AccountCurrentState(str, enum.Enum):
     BROKEN = "broken"
     REASSESS = "reassess"
     CLOSED = "closed"
-    # Added in subtask 6 (state/audit wiring): the Policy Gate's STOP action
-    # covers two semantically different outcomes (already paid -- a success
-    # needing reconciliation -- vs. expected value too small to pursue -- a
-    # deliberate abandonment), and collapsing both into plain CLOSED would
-    # lose that distinction for the metrics dashboard's "gross recovered vs.
-    # abstained vs. unrecoverable" breakdown. Plain CLOSED is kept as-is for
-    # Day 4's broader state machine to use for other terminal paths.
     CLOSED_PAID = "closed_paid"
     CLOSED_ABANDONED = "closed_abandoned"
+    DISPUTE_REVIEW = "dispute_review"
 
 
 class TreatmentGroup(str, enum.Enum):

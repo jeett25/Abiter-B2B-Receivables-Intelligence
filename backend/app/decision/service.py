@@ -17,6 +17,7 @@ from app.decision.policy import (
 )
 from app.ml.features import build_live_feature_table, load_raw_tables
 from app.ml.persist import load_model
+from app.ml.train_ptp import calibrated_predict_proba as ptp_calibrated_predict_proba
 from app.ml.train_recovery import calibrated_predict_proba
 from app.models.enums import ActionType
 from app.retrieval.hybrid_search import RetrievedCase, build_query_text, hybrid_retrieve
@@ -50,6 +51,35 @@ def score_recovery_probability(feature_row: pd.Series) -> float:
     this, not assumed)."""
     df = pd.DataFrame([feature_row])
     proba = calibrated_predict_proba(_get_recovery_model(), _get_recovery_calibrator(), df)
+    return float(proba[0])
+
+
+_ptp_model = None
+_ptp_calibrator = None
+
+
+def _get_ptp_model():
+    global _ptp_model
+    if _ptp_model is None:
+        _ptp_model = load_model("ptp_model")
+    return _ptp_model
+
+
+def _get_ptp_calibrator():
+    global _ptp_calibrator
+    if _ptp_calibrator is None:
+        _ptp_calibrator = load_model("ptp_calibrator")
+    return _ptp_calibrator
+
+
+def score_ptp_probability(feature_row: pd.Series) -> float:
+    """Mirrors score_recovery_probability -- same single-row-scoring
+    pattern, different model/calibrator (Platt/LogisticRegression, not
+    isotonic; train_ptp.calibrated_predict_proba already handles that
+    reshape). Day 4, Subtask 7: the first live use of the PTP model --
+    Day 2/3 never wired it since the live pool was a genuine blank slate."""
+    df = pd.DataFrame([feature_row])
+    proba = ptp_calibrated_predict_proba(_get_ptp_model(), _get_ptp_calibrator(), df)
     return float(proba[0])
 
 
