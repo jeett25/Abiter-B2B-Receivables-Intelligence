@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 from app.decision.config import (
     ACTION_UPLIFT,
+    ESCALATE_LARGE_AMOUNT_THRESHOLD_INR,
+    ESCALATE_LARGE_AMOUNT_UPLIFT,
     FRICTION_BASE_INR,
     FRICTION_GROWTH_PER_PRIOR_CONTACT,
     INTERVENTION_COST_INR,
@@ -40,8 +42,20 @@ class ActionEV:
     expected_value: float
 
 
-def probability_given_action(base_probability: float, action_type: ActionType) -> float:
-    uplift = ACTION_UPLIFT[action_type]
+def action_uplift(action_type: ActionType, amount: float) -> float:
+    """ACTION_UPLIFT's flat per-action value, EXCEPT ESCALATE above
+    ESCALATE_LARGE_AMOUNT_THRESHOLD_INR -- see config.py and
+    app/decision/DECISIONS.md for the Day-5 evidence behind this one
+    amount-conditioned exception. Every other action stays a flat lookup;
+    this is not a general "action x context" framework, just the one
+    correction the evidence actually supports today."""
+    if action_type == ActionType.ESCALATE and amount >= ESCALATE_LARGE_AMOUNT_THRESHOLD_INR:
+        return ESCALATE_LARGE_AMOUNT_UPLIFT
+    return ACTION_UPLIFT[action_type]
+
+
+def probability_given_action(base_probability: float, action_type: ActionType, amount: float) -> float:
+    uplift = action_uplift(action_type, amount)
     raw = base_probability + uplift * (1 - base_probability)
     return min(max(raw, CALIBRATED_PROBABILITY_FLOOR), CALIBRATED_PROBABILITY_CEILING)
 
@@ -63,7 +77,7 @@ def compute_action_ev(
     action_type: ActionType,
     prior_contact_count: int = 0,
 ) -> ActionEV:
-    probability = probability_given_action(base_probability, action_type)
+    probability = probability_given_action(base_probability, action_type, amount)
     cost = INTERVENTION_COST_INR[action_type]
     friction = friction_cost(action_type, prior_contact_count)
     expected_value = probability * amount - cost - friction

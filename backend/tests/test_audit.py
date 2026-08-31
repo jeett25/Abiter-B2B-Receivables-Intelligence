@@ -47,11 +47,20 @@ def _pick_undisputed_live_invoice(offset: int):
 
 
 def _fetch_decision_log(invoice_id, timestamp: datetime) -> DecisionLog:
+    """decision_logs is deliberately append-only with no dedup (see
+    app/agent/DECISIONS.md's Idempotency entry) -- rerunning the full test
+    suite against the same persistent dev DB inserts another
+    content-identical row for the same (invoice_id, timestamp) key every
+    time. Fetches the most recently inserted matching row; which one is
+    returned doesn't affect these tests' assertions, since the pipeline is
+    deterministic and produces the same content on every rerun -- this
+    just needs to tolerate >1 matching row instead of crashing on it."""
     session = SessionLocal()
     try:
-        return session.execute(
+        rows = session.execute(
             select(DecisionLog).where(DecisionLog.invoice_id == invoice_id, DecisionLog.timestamp == timestamp)
-        ).scalars().one()
+        ).scalars().all()
+        return rows[-1]
     finally:
         session.close()
 

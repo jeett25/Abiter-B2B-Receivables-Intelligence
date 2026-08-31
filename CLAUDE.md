@@ -329,8 +329,68 @@ Per the user's own plan: prove the Day-1 foundation moves between environments v
 3. At home: clone/pull the repo, stand up the same Docker Postgres setup (`pgvector/pgvector:pg16`, port 5433 — or pull pg18 fresh there, doesn't need to match this machine's image choice), create an empty `receivables_ai` db with pgvector enabled, then `pg_restore` the dump directly — this restores schema + data in one shot. Don't re-run `alembic upgrade head` or the generator to recreate it; that's a different, separate check.
 4. Separately (per the checklist's own "Final local verification" section), re-run `python -m synthetic.generator` at home with the same `SEED=42` and confirm the fingerprint matches what was produced at work — this is the *code*-portability proof, independent of whether the dump restored correctly.
 
+## Day 5, subtask 8: Deploy target decision (backend + DB)
+
+**Database: Supabase, not Render Postgres.** Both verified live (web search,
+not assumed from training data, since hosting free-tier policies change
+often) before deciding. Render's free Postgres runs a hard 30-day timer
+regardless of usage, then a 14-day grace period, then **permanent
+deletion** unless upgraded to paid. Supabase's free tier instead pauses
+after 7 days of genuine inactivity (no real query hitting the database --
+dashboard visits and cached API responses don't count) but never
+force-deletes; a paused project un-pauses with one click, data intact.
+Given this project needs to survive an unpredictable judging window after
+the 7-day build sprint ends, Supabase's "pause, never delete" failure mode
+is safer than Render's "deleted on a fixed clock" one. Trade-off: Supabase
+free tier caps at 500MB storage (vs. Render's 1GB) -- expected to be
+comfortably enough for this dataset (9,900 invoices + 9,000
+case_embeddings + related tables), not yet confirmed post-restore.
+pgvector is supported on both (confirmed live for Render; Supabase
+supports it on all plans including free).
+
+**Backend: Render Free Web Service**, pointed at the Supabase database via
+`DATABASE_URL`. 750 free instance-hours/month. Known trade-off: free web
+services spin down after 15 minutes idle, ~30-60s cold start on the next
+request -- not a functional problem, just something to remember before
+recording the demo video (hit the API once first to warm it up).
+
+**No Redis deployed.** Confirmed still unused -- Day 4's own DECISIONS.md
+already established direct in-process event handling, `REDIS_URL` an
+untouched placeholder. Deploying Upstash or any Redis instance would add
+an account and zero function.
+
+**Connection string: use Supabase's SESSION POOLER, not Direct connection
+or Transaction Pooler.** Revised after hitting this live: Supabase's
+"Direct connection" resolves to an IPv6-only address unless you're on
+their paid IPv4 add-on -- on a network without clean IPv6 routing, this
+makes pg_restore (and presumably the deployed backend too) hang
+indefinitely with zero error output, exactly the symptom hit during the
+actual restore attempt. Session Pooler (port 5432, hostname
+`*.pooler.supabase.com`, username becomes `postgres.<project-ref>`) is
+IPv4-compatible AND -- unlike Transaction Pooler (port 6543) -- preserves
+session state/prepared statements, making it the right choice for both
+the one-off pg_restore and the long-running Render backend's
+`DATABASE_URL`. Lesson: verify against the actual network path (a hang
+with no error is a connectivity-layer symptom, not a slow-operation one),
+not just against what the provider's docs recommend in the abstract.
+
+**requirements.txt pinned for the first time** (`pip freeze`, 87 packages)
+-- was deliberately left unpinned through Day 4 per the working-style
+notes below, but deploying to a fresh environment is exactly the moment
+version drift becomes a real risk, so this was the right time to do it.
+**Gotcha hit and fixed:** the first `pip freeze > requirements.txt`, run in
+PowerShell, silently produced a UTF-16-encoded file (every character
+visibly space-separated when inspected -- `a l e m b i c` instead of
+`alembic`) that `pip install -r requirements.txt` would have failed to
+parse on Render's Linux build. PowerShell's `>` redirection is not
+reliably UTF-8 in this environment despite general expectations otherwise
+-- re-ran via Git Bash's `pip freeze > requirements.txt` instead, which
+produced plain ASCII/UTF-8 correctly. Worth remembering for any future
+redirect-to-file command in this project: prefer Git Bash over PowerShell
+`>` when the output must be plain-text-parseable by another tool.
+
 ## What's next (for future-session context)
 
-Days 1–4 are all done (see their sections above). **Day 5 next**: attribution engine (randomized holdout) — **must feed back into correcting `ACTION_UPLIFT`**, not just measure the incremental-recovery gap (see the Day-3/Day-4 checklist sections above and the pinned project memory `project_day5_attribution_must_close_the_uplift_gap`); dashboard API endpoints (invoice list, decision explainability, metrics summary, audit log — moved here from Day 4 per the master doc's original plan); deploy backend + DB; `seed_demo.py` (now genuinely load-bearing, not just polish — the full live pool's `account_state` is permanently populated with real Day-4 values, so this is what makes repeatable demo recording possible).
+Days 1–4 are all done (see their sections above). **Day 5, in progress this session**: attribution engine (randomized holdout, ACTION_UPLIFT correction for ESCALATE actually applied — see app/attribution/ and app/decision/ DECISIONS.md files) and the dashboard API (app/api/, 6 endpoints, see app/api/DECISIONS.md) are both done. **Remaining for Day 5**: execute the deploy (target decided — see the "Day 5, subtask 8" section above; steps prepared, execution in progress) and `seed_demo.py` (still genuinely load-bearing, not just polish — the live pool's `account_state`/`payments` have now been permanently mutated twice, once by Day 4's final_integration_pass and once by Day 5's attribution write-back, so this is what makes repeatable demo recording possible).
 
 Day 6: frontend wiring to the live backend (now that Day 5 built the API it needs) + the deferred visual/CSS design pass, deploy frontend, deliberate failure-handling demo dry-run (Day 4 already has a rehearsed version of this in `simulate_scenarios.py`'s Scenario F — reuse it, don't rebuild it). Day 6 evening–7: README, pitch deck, video script/recording, submission.

@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.agent.events import Event, EventType
 from app.agent.graph import run_invoice
@@ -93,21 +93,36 @@ def test_overdue_action_payment_closed_paid(db_session):
 
     # -- payment: the ledger reflects a real, full payment (a real system's
     # payment gateway/webhook would write this row -- outside this graph's
-    # scope, exactly like load_context already assumes for is_actually_paid) --
+    # scope, exactly like load_context already assumes for is_actually_paid).
+    # DAY10 (2026-09-03) is after synthetic.generator.REFERENCE_DATE
+    # (2026-08-27) by construction (this test simulates a payment arriving
+    # after "today"), so this row is cleaned up in `finally` below --
+    # otherwise it permanently fails synthetic/validators.py's
+    # temporal-consistency check on every subsequent full-suite run.
     session = SessionLocal()
     try:
-        session.add(Payment(invoice_id=invoice_id, amount=Decimal(str(invoice_amount)), payment_date=DAY10.date(), method="upi"))
+        payment = Payment(invoice_id=invoice_id, amount=Decimal(str(invoice_amount)), payment_date=DAY10.date(), method="upi")
+        session.add(payment)
         session.commit()
+        payment_id = payment.id
     finally:
         session.close()
 
-    payment_event = Event(
-        event_type=EventType.PAYMENT_RECEIVED,
-        invoice_id=invoice_id,
-        occurred_at=DAY10,
-        payload={"amount": float(invoice_amount), "payment_date": DAY10.date().isoformat(), "method": "upi"},
-    )
-    payment_result = run_invoice(invoice_id, event=payment_event)
+    try:
+        payment_event = Event(
+            event_type=EventType.PAYMENT_RECEIVED,
+            invoice_id=invoice_id,
+            occurred_at=DAY10,
+            payload={"amount": float(invoice_amount), "payment_date": DAY10.date().isoformat(), "method": "upi"},
+        )
+        payment_result = run_invoice(invoice_id, event=payment_event)
 
-    assert payment_result["is_actually_paid"] is True
-    assert payment_result["next_state"] == AccountCurrentState.CLOSED_PAID
+        assert payment_result["is_actually_paid"] is True
+        assert payment_result["next_state"] == AccountCurrentState.CLOSED_PAID
+    finally:
+        cleanup_session = SessionLocal()
+        try:
+            cleanup_session.execute(delete(Payment).where(Payment.id == payment_id))
+            cleanup_session.commit()
+        finally:
+            cleanup_session.close()

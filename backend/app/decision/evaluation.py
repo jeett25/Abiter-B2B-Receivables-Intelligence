@@ -93,7 +93,7 @@ def summarize_strategy(name: str, outcomes: list[StrategyOutcome]) -> Evaluation
     n_stop = 0
 
     for outcome in outcomes:
-        probability = probability_given_action(outcome.base_probability, outcome.action)
+        probability = probability_given_action(outcome.base_probability, outcome.action, outcome.amount)
         gross += probability * outcome.amount
         cost += INTERVENTION_COST_INR[outcome.action]
         friction += friction_cost(outcome.action, prior_contact_count=0)

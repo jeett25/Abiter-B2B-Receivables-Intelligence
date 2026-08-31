@@ -1,6 +1,8 @@
 """app/decision/economics.py tests: pure EV formula, no DB required."""
+from app.decision.config import ESCALATE_LARGE_AMOUNT_THRESHOLD_INR, ESCALATE_LARGE_AMOUNT_UPLIFT
 from app.decision.economics import (
     CANDIDATE_ACTIONS,
+    action_uplift,
     compute_action_ev,
     generate_candidate_actions,
     materiality_threshold,
@@ -10,25 +12,44 @@ from app.decision.economics import (
 )
 from app.models.enums import ActionType
 
+# A small, below-threshold amount for tests that are about generic uplift
+# behavior, not the ESCALATE large-amount correction specifically -- keeps
+# those tests' intent unchanged by the Day-5 amount-conditioned exception.
+SMALL_AMOUNT = 20_000.0
+
 
 def test_probability_given_action_increases_with_action_uplift():
     base = 0.5
-    wait = probability_given_action(base, ActionType.WAIT)
-    email = probability_given_action(base, ActionType.EMAIL)
-    escalate = probability_given_action(base, ActionType.ESCALATE)
+    wait = probability_given_action(base, ActionType.WAIT, SMALL_AMOUNT)
+    email = probability_given_action(base, ActionType.EMAIL, SMALL_AMOUNT)
+    escalate = probability_given_action(base, ActionType.ESCALATE, SMALL_AMOUNT)
     assert wait == base
     assert wait < email < escalate
 
 
 def test_probability_given_action_clipped_to_calibration_band():
-    assert probability_given_action(0.999, ActionType.ESCALATE) <= 0.99
-    assert probability_given_action(0.0, ActionType.WAIT) >= 0.01
+    assert probability_given_action(0.999, ActionType.ESCALATE, SMALL_AMOUNT) <= 0.99
+    assert probability_given_action(0.0, ActionType.WAIT, SMALL_AMOUNT) >= 0.01
 
 
 def test_probability_uplift_shrinks_as_base_probability_approaches_one():
-    low_base_gain = probability_given_action(0.2, ActionType.ESCALATE) - 0.2
-    high_base_gain = probability_given_action(0.95, ActionType.ESCALATE) - 0.95
+    low_base_gain = probability_given_action(0.2, ActionType.ESCALATE, SMALL_AMOUNT) - 0.2
+    high_base_gain = probability_given_action(0.95, ActionType.ESCALATE, SMALL_AMOUNT) - 0.95
     assert low_base_gain > high_base_gain
+
+
+def test_action_uplift_flat_for_every_action_below_the_escalate_threshold():
+    assert action_uplift(ActionType.ESCALATE, ESCALATE_LARGE_AMOUNT_THRESHOLD_INR - 1) == 0.14
+
+
+def test_action_uplift_reduced_for_escalate_at_or_above_the_threshold():
+    assert action_uplift(ActionType.ESCALATE, ESCALATE_LARGE_AMOUNT_THRESHOLD_INR) == ESCALATE_LARGE_AMOUNT_UPLIFT
+    assert action_uplift(ActionType.ESCALATE, 500_000.0) == ESCALATE_LARGE_AMOUNT_UPLIFT
+
+
+def test_action_uplift_unaffected_for_every_other_action_regardless_of_amount():
+    for action in (ActionType.EMAIL, ActionType.WHATSAPP, ActionType.PAYMENT_LINK, ActionType.VOICE):
+        assert action_uplift(action, 1_000_000.0) == action_uplift(action, SMALL_AMOUNT)
 
 
 def test_stop_never_in_candidate_set():
@@ -49,8 +70,9 @@ def test_disputed_invoice_excludes_escalate_and_voice():
 
 def test_disputed_flag_removes_escalate_from_ranking_even_when_it_would_win():
     # Same large-invoice/moderate-risk scenario that makes ESCALATE win
-    # un-disputed (see test below) -- disputed must never surface it at all.
-    ranked = rank_actions(base_probability=0.5, amount=300_000.0, is_disputed=True)
+    # un-disputed below the Day-5 large-amount threshold (see test below) --
+    # disputed must never surface it at all, regardless of amount.
+    ranked = rank_actions(base_probability=0.5, amount=90_000.0, is_disputed=True)
     assert ActionType.ESCALATE not in [ev.action_type for ev in ranked]
 
 
@@ -70,16 +92,36 @@ def test_high_confidence_customer_recommends_wait():
     assert top.action_type == ActionType.WAIT
 
 
-def test_large_invoice_moderate_risk_prefers_escalate_over_payment_link():
-    # A large invoice at moderate confidence (e.g. a promise just broke,
-    # dropping confidence from high to moderate) -- ESCALATE's higher uplift
-    # is worth far more than its extra cost once amount is large enough,
-    # so PAYMENT_LINK should not win by default here.
-    ranked = rank_actions(base_probability=0.5, amount=300_000.0)
+def test_moderate_invoice_moderate_risk_prefers_escalate_over_payment_link():
+    # A moderately-large invoice (below the Day-5 ESCALATE large-amount
+    # threshold, so its full uplift still applies) at moderate confidence
+    # (e.g. a promise just broke, dropping confidence from high to
+    # moderate) -- ESCALATE's higher uplift is worth far more than its
+    # extra cost, so PAYMENT_LINK should not win by default here.
+    amount = 90_000.0
+    ranked = rank_actions(base_probability=0.5, amount=amount)
     top = ranked[0]
     assert top.action_type == ActionType.ESCALATE
-    payment_link_ev = compute_action_ev(0.5, 300_000.0, ActionType.PAYMENT_LINK)
+    payment_link_ev = compute_action_ev(0.5, amount, ActionType.PAYMENT_LINK)
     assert top.expected_value > payment_link_ev.expected_value
+
+
+def test_large_invoice_no_longer_prefers_escalate_after_uplift_correction():
+    """Day-5 finding: this exact scenario (base=0.5, amount=300,000) used to
+    make ESCALATE win (EV~170,270 under the old flat 0.14 uplift) -- the
+    randomized-holdout experiment found that assumption unsupported for
+    large invoices (see app/decision/DECISIONS.md), so above
+    ESCALATE_LARGE_AMOUNT_THRESHOLD_INR its uplift now correctly loses to
+    VOICE, whose uplift was untouched by the correction."""
+    amount = 300_000.0
+    ranked = rank_actions(base_probability=0.5, amount=amount)
+    assert ranked[0].action_type == ActionType.VOICE
+
+    escalate_ev = next(ev for ev in ranked if ev.action_type == ActionType.ESCALATE)
+    voice_ev = next(ev for ev in ranked if ev.action_type == ActionType.VOICE)
+    assert voice_ev.expected_value > escalate_ev.expected_value
+    # ESCALATE has fallen behind WHATSAPP and PAYMENT_LINK too, not just VOICE.
+    assert ranked.index(escalate_ev) >= 3
 
 
 def test_friction_grows_with_prior_contact_count_and_can_flip_ranking():

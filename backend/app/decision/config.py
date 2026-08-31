@@ -35,3 +35,17 @@ FRICTION_GROWTH_PER_PRIOR_CONTACT = 0.5
 
 MATERIALITY_FLOOR_INR = 50.0
 MATERIALITY_FRACTION_OF_AMOUNT = 0.01
+
+# Day-5 correction (app/attribution/'s randomized-holdout experiment):
+# ESCALATE's flat +14% uplift assumption was not supported for large
+# invoices -- ~73% of ESCALATE decisions in the experiment went to
+# strategic_enterprise-shaped invoices with a true (hidden ground truth)
+# ESCALATE uplift of exactly 0.00. amount is used as an OBSERVABLE proxy
+# for that archetype (a real system can condition on amount, never on
+# archetype) -- checked against real amount-by-archetype distributions,
+# not assumed clean; see app/decision/DECISIONS.md for the full evidence
+# chain, the threshold derivation, and the known limitation (the proxy has
+# genuine tail overlap, so this will misclassify a minority of invoices in
+# both directions).
+ESCALATE_LARGE_AMOUNT_THRESHOLD_INR = 100_000.0
+ESCALATE_LARGE_AMOUNT_UPLIFT = 0.02
