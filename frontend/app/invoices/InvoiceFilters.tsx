@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { AccountCurrentState } from "@/lib/types";
+import { cx } from "@/lib/ui";
 
 // Client component (needs onChange) so picking a Status auto-applies
 // immediately -- no click required. The Filter button stays for the
@@ -25,6 +26,9 @@ const CURRENT_STATE_OPTIONS: AccountCurrentState[] = [
   "closed_abandoned",
   "dispute_review",
 ];
+
+const inputClass =
+  "rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm text-text placeholder:text-text-faint focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/50 transition-colors";
 
 export default function InvoiceFilters({
   currentState,
@@ -65,39 +69,48 @@ export default function InvoiceFilters({
   const hasFilters = Boolean(currentState || segment || invoiceNumber);
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      style={{ marginBottom: "1em", display: "flex", gap: "1em", alignItems: "center" }}
-    >
-      <label>
-        Invoice #:{" "}
-        <input
-          type="text"
-          name="invoice_number"
-          defaultValue={invoiceNumber ?? ""}
-          placeholder="e.g. 10184 or INV-10184"
-        />
-      </label>
-      <label>
-        Status:{" "}
-        <select name="current_state" defaultValue={currentState ?? ""} onChange={handleStatusChange}>
-          <option value="">All</option>
-          {CURRENT_STATE_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Segment:{" "}
-        <input type="text" name="segment" defaultValue={segment ?? ""} placeholder="e.g. SMB" />
-      </label>
-      <button type="submit">Filter</button>
+    <form onSubmit={handleSubmit} className="mb-5 flex flex-wrap items-center gap-3">
+      <input
+        type="text"
+        name="invoice_number"
+        defaultValue={invoiceNumber ?? ""}
+        placeholder="Search invoice # (e.g. INV-10184)"
+        className={cx(inputClass, "w-64")}
+      />
+      <select
+        name="current_state"
+        defaultValue={currentState ?? ""}
+        onChange={handleStatusChange}
+        className={inputClass}
+      >
+        <option value="">All statuses</option>
+        {CURRENT_STATE_OPTIONS.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+      <input
+        type="text"
+        name="segment"
+        defaultValue={segment ?? ""}
+        placeholder="Segment (e.g. SMB)"
+        className={cx(inputClass, "w-40")}
+      />
+      <button
+        type="submit"
+        className="rounded-lg bg-accent px-3.5 py-1.5 text-sm font-medium text-white hover:bg-accent-hover transition-colors"
+      >
+        Filter
+      </button>
       {hasFilters && (
-        <a href="/invoices" onClick={(e) => { e.preventDefault(); navigate("", "", ""); }}>
+        <button
+          type="button"
+          onClick={() => navigate("", "", "")}
+          className="text-sm text-text-muted hover:text-text transition-colors"
+        >
           Clear filters
-        </a>
+        </button>
       )}
     </form>
   );

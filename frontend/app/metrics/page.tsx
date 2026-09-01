@@ -1,70 +1,13 @@
-import Link from "next/link";
 import { ApiError, getAttribution, getMetrics } from "@/lib/api";
-import { AttributionResponse, AttributionSliceOut, EvaluationSummary, MetricsResponse } from "@/lib/types";
+import { AttributionResponse, MetricsResponse } from "@/lib/types";
+import { ErrorPanel, PageHeader, StatTile, formatCurrency, formatPercent } from "@/lib/ui";
 import RefreshButton from "../RefreshButton";
+import ComparisonChart from "./ComparisonChart";
+import SliceTable from "./SliceTable";
 
 // Screen 3 (master doc Day 3): the baseline-vs-engine comparison, plus Day
 // 5's randomized-holdout attribution experiment. Day 6: connected to the
 // real GET /api/metrics and GET /api/attribution.
-function formatCurrency(value: number): string {
-  return `Rs.${value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
-}
-
-function SummaryRow({ label, baseline, engine }: { label: string; baseline: string; engine: string }) {
-  return (
-    <tr>
-      <td>{label}</td>
-      <td>{baseline}</td>
-      <td>{engine}</td>
-    </tr>
-  );
-}
-
-function SliceTable({ title, dimensionLabel, rows }: { title: string; dimensionLabel: string; rows: AttributionSliceOut[] }) {
-  if (rows.length === 0) {
-    return (
-      <>
-        <h2>{title}</h2>
-        <p>No slices available.</p>
-      </>
-    );
-  }
-  return (
-    <>
-      <h2>{title}</h2>
-      <table border={1} cellPadding={8} style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr>
-            <th>{dimensionLabel}</th>
-            <th>Treatment n</th>
-            <th>Control n</th>
-            <th>Treatment recovery rate</th>
-            <th>Control recovery rate</th>
-            <th>Incremental recovery rate</th>
-            <th>Incremental recovered</th>
-            <th>Incremental net recovery</th>
-            <th>z</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={`${r.segment ?? "all"}-${r.action ?? "all"}`}>
-              <td>{r.segment ?? r.action ?? "(pooled)"}</td>
-              <td>{r.treatment_n}</td>
-              <td>{r.control_n}</td>
-              <td>{(r.treatment_recovery_rate * 100).toFixed(1)}%</td>
-              <td>{(r.control_recovery_rate * 100).toFixed(1)}%</td>
-              <td>{(r.incremental_recovery_rate * 100).toFixed(1)}%</td>
-              <td>{formatCurrency(r.incremental_recovered_amount)}</td>
-              <td>{formatCurrency(r.incremental_net_recovery)}</td>
-              <td>{r.recovery_rate_diff_z !== null ? r.recovery_rate_diff_z.toFixed(2) : "n/a"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
-  );
-}
 
 export default async function MetricsPage() {
   let metrics: MetricsResponse, attribution: AttributionResponse;
@@ -74,17 +17,14 @@ export default async function MetricsPage() {
     const message = err instanceof ApiError ? err.message : "Unexpected error loading metrics.";
     return (
       <div>
-        <h1>Baseline vs. Decision Engine</h1>
-        <p role="alert" style={{ color: "#b00020" }}>
-          Failed to load metrics: {message}
-        </p>
-        <Link href="/metrics">Retry</Link>
+        <PageHeader title="Baseline vs. Decision Engine" />
+        <ErrorPanel message={`Failed to load metrics: ${message}`} retryHref="/metrics" />
       </div>
     );
   }
 
-  const b: EvaluationSummary = metrics.baseline;
-  const e: EvaluationSummary = metrics.engine;
+  const b = metrics.baseline;
+  const e = metrics.engine;
   const netImprovement = e.net_expected_recovered - b.net_expected_recovered;
 
   const byAction = attribution.slices.filter((s) => s.segment === null && s.action !== null);
@@ -92,85 +32,87 @@ export default async function MetricsPage() {
   const pooled = attribution.slices.find((s) => s.segment === null && s.action === null);
 
   return (
-    <div>
-      <h1>
-        Baseline vs. Decision Engine
-        {" "}
-        <RefreshButton />
-      </h1>
-      <p>
-        Expected-value comparison over the full {e.n_invoices}-invoice live pool. Both strategies use the
-        same calibrated recovery-model probabilities -- only the action choice differs, isolating the value
-        the decision-intelligence layer contributes. <a href="#experiment">Jump to the attribution experiment.</a>
-      </p>
+    <div className="space-y-8">
+      <PageHeader
+        title="Baseline vs. Decision Engine"
+        subtitle={
+          <>
+            Expected-value comparison over the full {e.n_invoices}-invoice live pool. Both strategies use the same
+            calibrated recovery-model probabilities — only the action choice differs, isolating the value the
+            decision-intelligence layer contributes.{" "}
+            <a href="#experiment" className="text-accent-text hover:underline">
+              Jump to the attribution experiment ↓
+            </a>
+          </>
+        }
+        actions={<RefreshButton />}
+      />
 
-      <table border={1} cellPadding={8} style={{ borderCollapse: "collapse", width: "100%" }}>
-        <thead>
-          <tr>
-            <th>Metric</th>
-            <th>{b.strategy_name}</th>
-            <th>{e.strategy_name}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <SummaryRow
-            label="Interventions / Wait / Stop"
-            baseline={`${b.n_interventions} / ${b.n_wait} / ${b.n_stop}`}
-            engine={`${e.n_interventions} / ${e.n_wait} / ${e.n_stop}`}
-          />
-          <SummaryRow
-            label="Gross expected recovered"
-            baseline={formatCurrency(b.gross_expected_recovered)}
-            engine={formatCurrency(e.gross_expected_recovered)}
-          />
-          <SummaryRow
-            label="Total cost + friction"
-            baseline={formatCurrency(b.total_cost + b.total_friction)}
-            engine={formatCurrency(e.total_cost + e.total_friction)}
-          />
-          <SummaryRow
-            label="Net expected recovered"
-            baseline={formatCurrency(b.net_expected_recovered)}
-            engine={formatCurrency(e.net_expected_recovered)}
-          />
-          <SummaryRow
-            label="Recovery rate"
-            baseline={`${(b.recovery_rate * 100).toFixed(1)}%`}
-            engine={`${(e.recovery_rate * 100).toFixed(1)}%`}
-          />
-        </tbody>
-      </table>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatTile label="Net improvement" value={formatCurrency(netImprovement)} tone="success" />
+        <StatTile label="Unnecessary interventions avoided" value={String(metrics.unnecessary_interventions_avoided)} tone="accent" />
+        <StatTile label="Engine recovery rate" value={formatPercent(e.recovery_rate)} />
+        <StatTile label="Baseline recovery rate" value={formatPercent(b.recovery_rate)} />
+      </div>
 
-      <h2>Headline numbers</h2>
-      <ul>
-        <li>Net improvement (engine - baseline): {formatCurrency(netImprovement)}</li>
-        <li>Unnecessary interventions avoided: {metrics.unnecessary_interventions_avoided}</li>
-      </ul>
+      <ComparisonChart baseline={b} engine={e} />
 
-      <h1 id="experiment">Attribution experiment ({attribution.experiment_id})</h1>
-      {metrics.attribution === null ? (
-        <p>Attribution experiment results are not available yet.</p>
-      ) : (
-        <>
-          <p>
-            Randomized holdout, pooled across the whole eligible population: {metrics.attribution.treatment_n}{" "}
-            treated vs. {metrics.attribution.control_n} control invoices.
-          </p>
-          <ul>
-            <li>Treatment recovery rate: {(metrics.attribution.treatment_recovery_rate * 100).toFixed(1)}%</li>
-            <li>Control recovery rate: {(metrics.attribution.control_recovery_rate * 100).toFixed(1)}%</li>
-            <li>Incremental recovery rate: {(metrics.attribution.incremental_recovery_rate * 100).toFixed(1)}%</li>
-            <li>Incremental recovered amount: {formatCurrency(metrics.attribution.incremental_recovered_amount)}</li>
-            <li>Incremental net recovery: {formatCurrency(metrics.attribution.incremental_net_recovery)}</li>
+      <div className="overflow-hidden rounded-2xl border border-border">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-border bg-surface-2/60 text-left text-xs font-medium uppercase tracking-wide text-text-muted">
+              <th className="px-4 py-3">Metric</th>
+              <th className="px-4 py-3">{b.strategy_name}</th>
+              <th className="px-4 py-3">{e.strategy_name}</th>
+            </tr>
+          </thead>
+          <tbody className="font-mono-tabular">
+            <MetricRow label="Interventions / Wait / Stop" baseline={`${b.n_interventions} / ${b.n_wait} / ${b.n_stop}`} engine={`${e.n_interventions} / ${e.n_wait} / ${e.n_stop}`} />
+            <MetricRow label="Gross expected recovered" baseline={formatCurrency(b.gross_expected_recovered)} engine={formatCurrency(e.gross_expected_recovered)} />
+            <MetricRow label="Total cost + friction" baseline={formatCurrency(b.total_cost + b.total_friction)} engine={formatCurrency(e.total_cost + e.total_friction)} />
+            <MetricRow label="Net expected recovered" baseline={formatCurrency(b.net_expected_recovered)} engine={formatCurrency(e.net_expected_recovered)} />
+            <MetricRow label="Recovery rate" baseline={formatPercent(b.recovery_rate)} engine={formatPercent(e.recovery_rate)} />
+          </tbody>
+        </table>
+      </div>
+
+      <section id="experiment" className="scroll-mt-24 space-y-4">
+        <PageHeader title={`Attribution experiment (${attribution.experiment_id})`} />
+        {metrics.attribution === null ? (
+          <p className="text-sm text-text-muted">Attribution experiment results are not available yet.</p>
+        ) : (
+          <>
+            <p className="text-sm text-text-muted">
+              Randomized holdout, pooled across the whole eligible population:{" "}
+              <span className="font-mono-tabular text-text">{metrics.attribution.treatment_n}</span> treated vs.{" "}
+              <span className="font-mono-tabular text-text">{metrics.attribution.control_n}</span> control invoices.
+            </p>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              <StatTile label="Treatment recovery" value={formatPercent(metrics.attribution.treatment_recovery_rate)} />
+              <StatTile label="Control recovery" value={formatPercent(metrics.attribution.control_recovery_rate)} />
+              <StatTile label="Incremental recovery" value={formatPercent(metrics.attribution.incremental_recovery_rate)} tone="success" />
+              <StatTile label="Incremental recovered" value={formatCurrency(metrics.attribution.incremental_recovered_amount)} tone="success" />
+              <StatTile label="Incremental net recovery" value={formatCurrency(metrics.attribution.incremental_net_recovery)} tone="accent" />
+            </div>
             {pooled && pooled.recovery_rate_diff_z !== null && (
-              <li>Signal strength (z): {pooled.recovery_rate_diff_z.toFixed(2)}</li>
+              <p className="text-xs text-text-faint">Signal strength (z): {pooled.recovery_rate_diff_z.toFixed(2)}</p>
             )}
-          </ul>
-        </>
-      )}
+          </>
+        )}
+      </section>
 
       <SliceTable title="By action" dimensionLabel="Action" rows={byAction} />
       <SliceTable title="By segment" dimensionLabel="Segment" rows={bySegment} />
     </div>
+  );
+}
+
+function MetricRow({ label, baseline, engine }: { label: string; baseline: string; engine: string }) {
+  return (
+    <tr className="border-b border-border/60 last:border-0">
+      <td className="px-4 py-3 font-sans text-text-muted">{label}</td>
+      <td className="px-4 py-3 text-text">{baseline}</td>
+      <td className="px-4 py-3 text-status-success">{engine}</td>
+    </tr>
   );
 }

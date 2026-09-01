@@ -231,3 +231,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Claude Code local tooling (skills/agents installs, local settings) -- not project code
+.claude/
+.agents/
+skills-lock.json

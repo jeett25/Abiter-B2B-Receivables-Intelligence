@@ -1,3 +1,5 @@
+import { TableSkeleton } from "@/lib/Skeleton";
+
 export default function Loading() {
-  return <p>Loading invoices...</p>;
+  return <TableSkeleton rows={10} />;
 }

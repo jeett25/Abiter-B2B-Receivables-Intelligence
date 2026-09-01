@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { ApiError, listInvoices } from "@/lib/api";
+import { ErrorPanel, EmptyState, PageHeader } from "@/lib/ui";
 import RefreshButton from "../RefreshButton";
 import InvoiceFilters from "./InvoiceFilters";
+import InvoiceRow from "./InvoiceRow";
 
 // Screen 1 (master doc Day 3): overdue invoices, status, recoverability
 // score, next action. Day 6: connected to the real GET /api/invoices.
@@ -46,66 +48,73 @@ export default async function InvoicesPage({
     const message = err instanceof ApiError ? err.message : "Unexpected error loading invoices.";
     return (
       <div>
-        <h1>Overdue Invoices</h1>
-        <p role="alert" style={{ color: "#b00020" }}>
-          Failed to load invoices: {message}
-        </p>
-        {/* Retries the SAME filtered/paginated URL, not a bare reset to
-            /invoices -- a failed fetch shouldn't also discard the user's
-            filters. */}
-        <Link href={currentHref}>Retry</Link>
+        <PageHeader title="Overdue Invoices" />
+        <ErrorPanel message={`Failed to load invoices: ${message}`} retryHref={currentHref} />
       </div>
     );
   }
 
   return (
     <div>
-      <h1>
-        Overdue Invoices <RefreshButton />
-      </h1>
+      <PageHeader
+        title="Overdue Invoices"
+        subtitle="Every row is a real, persisted decision from the live 900-invoice pool -- scored, retrieved, policy-checked, and acted on."
+        actions={<RefreshButton />}
+      />
 
       <InvoiceFilters currentState={currentState} segment={segment} invoiceNumber={invoiceNumber} />
 
       {invoices.length === 0 ? (
-        <p>No invoices match these filters.</p>
+        <EmptyState>No invoices match these filters.</EmptyState>
       ) : (
-        <table border={1} cellPadding={8} style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead>
-            <tr>
-              <th>Invoice #</th>
-              <th>Customer</th>
-              <th>Amount</th>
-              <th>Due Date</th>
-              <th>Status</th>
-              <th>Recoverability</th>
-              <th>Next Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {invoices.map((invoice) => (
-              <tr key={invoice.invoice_id}>
-                <td>
-                  <Link href={`/invoices/${invoice.invoice_id}`}>{invoice.invoice_number}</Link>
-                </td>
-                <td>{invoice.customer_name}</td>
-                <td>Rs.{invoice.amount.toLocaleString("en-IN")}</td>
-                <td>{invoice.due_date}</td>
-                <td>{invoice.current_state}</td>
-                <td>{(invoice.recoverability_score * 100).toFixed(0)}%</td>
-                <td>{invoice.next_action ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-hidden rounded-2xl border border-border">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-border bg-surface-2/60 text-left text-xs font-medium uppercase tracking-wide text-text-muted">
+                  <th className="px-4 py-3">Invoice #</th>
+                  <th className="px-4 py-3">Customer</th>
+                  <th className="px-4 py-3 text-right">Amount</th>
+                  <th className="px-4 py-3">Due Date</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Recoverability</th>
+                  <th className="px-4 py-3">Next Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((invoice, i) => (
+                  <InvoiceRow key={invoice.invoice_id} invoice={invoice} index={i} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
-      <div style={{ marginTop: "1em", display: "flex", gap: "1em" }}>
-        {offset > 0 && (
-          <Link href={buildHref(currentState, segment, invoiceNumber, Math.max(0, offset - PAGE_SIZE))}>&larr; Previous</Link>
-        )}
-        {invoices.length === PAGE_SIZE && (
-          <Link href={buildHref(currentState, segment, invoiceNumber, offset + PAGE_SIZE)}>Next &rarr;</Link>
-        )}
+      <div className="mt-5 flex items-center justify-between text-sm">
+        <span className="text-text-faint">
+          Showing {invoices.length > 0 ? offset + 1 : 0}
+          {"–"}
+          {offset + invoices.length}
+        </span>
+        <div className="flex gap-2">
+          {offset > 0 && (
+            <Link
+              href={buildHref(currentState, segment, invoiceNumber, Math.max(0, offset - PAGE_SIZE))}
+              className="rounded-lg border border-border px-3 py-1.5 text-text-muted hover:text-text hover:border-border-strong transition-colors"
+            >
+              ← Previous
+            </Link>
+          )}
+          {invoices.length === PAGE_SIZE && (
+            <Link
+              href={buildHref(currentState, segment, invoiceNumber, offset + PAGE_SIZE)}
+              className="rounded-lg border border-border px-3 py-1.5 text-text-muted hover:text-text hover:border-border-strong transition-colors"
+            >
+              Next →
+            </Link>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -27,13 +27,16 @@ export default function RefreshButton() {
   }, [isPending]);
 
   return (
-    <span style={{ fontSize: "0.6em", marginLeft: "0.75em" }}>
-      <button type="button" onClick={() => startTransition(() => router.refresh())} disabled={isPending}>
-        {isPending ? "Refreshing..." : "Refresh"}
+    <span className="inline-flex items-center gap-2 text-xs">
+      <button
+        type="button"
+        onClick={() => startTransition(() => router.refresh())}
+        disabled={isPending}
+        className="rounded-lg border border-border bg-surface px-2.5 py-1 font-medium text-text-muted hover:text-text hover:border-border-strong transition-colors disabled:opacity-60"
+      >
+        {isPending ? "Refreshing…" : "Refresh"}
       </button>
-      {lastRefreshed && (
-        <span style={{ marginLeft: "0.5em", color: "#888" }}>Last refreshed {lastRefreshed}</span>
-      )}
+      {lastRefreshed && <span className="text-text-faint">Last refreshed {lastRefreshed}</span>}
     </span>
   );
 }

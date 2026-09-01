@@ -3,10 +3,12 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
+from sqlalchemy import func, select
+
 from app.attribution.simulate_outcomes import SimulatedOutcome
 from app.core.db import SessionLocal
 from app.models import AccountState, AttributionRecord, Invoice, Payment
-from app.models.enums import AccountCurrentState, ActionType, InvoiceStatus, TreatmentGroup
+from app.models.enums import AccountCurrentState, ActionType, InvoiceStatus, PaymentStatus, TreatmentGroup
 
 LEDGER_PAYMENT_METHOD = "attribution_simulation"
 
@@ -36,14 +38,23 @@ def _apply_ledger_write_back(outcome: SimulatedOutcome, session) -> None:
     docstring for why the not-recovered case is a deliberate no-op here."""
     payment_date = outcome.ledger_payment_date
 
-    session.add(
-        Payment(
-            invoice_id=outcome.invoice_id,
-            amount=_to_decimal(outcome.recovered_amount),
-            payment_date=payment_date,
-            method=LEDGER_PAYMENT_METHOD,
+    existing_completed_total = session.execute(
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.invoice_id == outcome.invoice_id,
+            Payment.status == PaymentStatus.COMPLETED,
         )
-    )
+    ).scalar_one()
+
+    remaining_balance = _to_decimal(outcome.recovered_amount) - existing_completed_total
+    if remaining_balance > 0:
+        session.add(
+            Payment(
+                invoice_id=outcome.invoice_id,
+                amount=remaining_balance,
+                payment_date=payment_date,
+                method=LEDGER_PAYMENT_METHOD,
+            )
+        )
 
     invoice = session.get(Invoice, outcome.invoice_id)
     invoice.status = InvoiceStatus.PAID
