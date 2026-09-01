@@ -354,6 +354,38 @@ services spin down after 15 minutes idle, ~30-60s cold start on the next
 request -- not a functional problem, just something to remember before
 recording the demo video (hit the API once first to warm it up).
 
+**Deployed and verified live** at `https://b2b-receivables-intelligence.onrender.com`
+-- `/health`, `/api/invoices`, `/api/metrics`, `/api/attribution` all
+checked directly against the live URL and confirmed correct (metrics
+internally consistent at 900 total invoices; attribution numbers match the
+local pre-ACTION_UPLIFT-fix run exactly, as expected since the experiment
+hasn't been re-run since).
+
+**Two real deploy bugs hit and fixed, both worth remembering:**
+1. `DATABASE_URL` needs the explicit driver: `postgresql+psycopg://...`,
+   not bare `postgresql://...` -- SQLAlchemy defaults an unqualified
+   scheme to `psycopg2`, which this project never installs (uses `psycopg`
+   v3 throughout). Local `.env` already had this right; the
+   Supabase-provided connection string does not include it by default.
+2. **None of Day 5's work (subtasks 1-8) had been committed to git before
+   the first deploy attempt** -- Render builds from `origin/main`, which
+   was still sitting at Day 4's last commit. Caused a confusing
+   `alembic: Can't locate revision` error (the migration file genuinely
+   didn't exist in that checkout) that had nothing to do with the
+   migration itself. Committed as `ecd8bae "attribution and backend api
+   calls done"` and pushed before the deploy that actually worked. Lesson:
+   a red build log doesn't always mean the code is wrong -- check `git
+   status`/`git log` against what the host is actually building from
+   before debugging the code itself.
+
+Also hit and fixed during this same stretch: Supabase's Direct connection
+resolves IPv6-only (hangs forever, no error, on IPv6-unclean networks --
+switched to Session Pooler mid-restore); Supabase installs pgvector into
+an `extensions` schema by default, not `public` (our dump's DDL expects
+`public.vector` -- fixed via `create extension vector with schema
+public`); the first `pip freeze` run in PowerShell silently produced a
+UTF-16-encoded requirements.txt (fixed via Git Bash instead).
+
 **No Redis deployed.** Confirmed still unused -- Day 4's own DECISIONS.md
 already established direct in-process event handling, `REDIS_URL` an
 untouched placeholder. Deploying Upstash or any Redis instance would add
@@ -391,6 +423,10 @@ redirect-to-file command in this project: prefer Git Bash over PowerShell
 
 ## What's next (for future-session context)
 
-Days 1–4 are all done (see their sections above). **Day 5, in progress this session**: attribution engine (randomized holdout, ACTION_UPLIFT correction for ESCALATE actually applied — see app/attribution/ and app/decision/ DECISIONS.md files) and the dashboard API (app/api/, 6 endpoints, see app/api/DECISIONS.md) are both done. **Remaining for Day 5**: execute the deploy (target decided — see the "Day 5, subtask 8" section above; steps prepared, execution in progress) and `seed_demo.py` (still genuinely load-bearing, not just polish — the live pool's `account_state`/`payments` have now been permanently mutated twice, once by Day 4's final_integration_pass and once by Day 5's attribution write-back, so this is what makes repeatable demo recording possible).
+Days 1–4 are all done (see their sections above). **Day 5, in progress this session**: attribution engine (randomized holdout, ACTION_UPLIFT correction for ESCALATE actually applied — see app/attribution/ and app/decision/ DECISIONS.md files), the dashboard API (app/api/, 6 endpoints, see app/api/DECISIONS.md), and the deploy (Supabase + Render, live and verified — see the "Day 5, subtask 8" section above) are all done. `synthetic/seed_demo.py` is also done — found and fixed a real problem first: 3 of the 6 curated demo fixtures (synthetic/demo_fixtures.json) had been swept into the Day-5 attribution experiment and resolved (flipped to CLOSED_PAID), breaking their intended demo narrative, since the experiment was never given an exclusion list for them. The script undoes that (deletes the write-back's Payment/decision_logs/payment_promises rows for those 3, re-runs the current agent fresh) and prints a concrete PASS/WARN per fixture every run — all 6 currently PASS. See app/attribution/DECISIONS.md for why attribution_records intentionally stays out of sync with these 3 invoices' history afterward (a documented, accepted consequence, not a bug).
+
+**Remaining for Day 5**: the final Day-5 validation pass (subtask 11 of the Day-5 subtask list — full checklist + full pytest run).
 
 Day 6: frontend wiring to the live backend (now that Day 5 built the API it needs) + the deferred visual/CSS design pass, deploy frontend, deliberate failure-handling demo dry-run (Day 4 already has a rehearsed version of this in `simulate_scenarios.py`'s Scenario F — reuse it, don't rebuild it). Day 6 evening–7: README, pitch deck, video script/recording, submission.
+
+**IMPORTANT — REMIND USER BEFORE ANY DEMO RECORDING SESSION:** the video must showcase the hosted stack (deployed frontend + Render backend + Supabase DB), not `localhost`. Local `.env` should point at local Docker Postgres by default for all Day 6 dev work — Render's own `DATABASE_URL` (set in its dashboard) is independent of local `.env` and always points at Supabase already. But right before actually recording: (1) temporarily point local `.env` at Supabase, (2) run `python -m synthetic.seed_demo` against it to reset the 6 curated demo fixtures there (a Day-5 restore from `deploy.dump` reverted Supabase's fixtures back to their broken pre-seed-demo state — local was fixed via this same script on 2026-09-04, Supabase was not, as of this note), (3) point `.env` back to local afterward, (4) record against the live hosted URLs, not localhost. See the Day 5 sections above (subtask 8 deploy notes, subtask 9 seed_demo.py) for the full history of why this local/Supabase split exists and what went wrong when it was blurred.

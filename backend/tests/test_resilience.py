@@ -163,30 +163,35 @@ def test_invalid_event_routes_to_audit_without_running_the_pipeline():
 
 def test_full_graph_survives_a_forced_tool_failure_and_falls_back_safely(monkeypatch, db_session):
     """The literal 'break something on purpose' demo moment. Uses the
-    chronic_late_escalate demo fixture -- already confirmed via
-    test_agent_demo_parity.py to select ESCALATE -- so the forced failure
-    and its fallback are fully deterministic, ready to record."""
+    chronic_late_escalate demo fixture. Was ESCALATE at Day-3 time;
+    reframed after Day 5 subtask 6's ESCALATE amount-threshold fix (see
+    app/decision/DECISIONS.md) -- INV-10184 (Rs.118,361) now correctly
+    produces VOICE instead, so the forced failure targets execute_voice,
+    not request_human_handoff. Still fully deterministic, still the same
+    demo moment: economics wants an active intervention, the tool fails
+    twice, the system falls back to WAIT rather than guessing a
+    substitute channel."""
     invoice_number = FIXTURES["chronic_late_escalate"]["invoice_number"]
     invoice_id = db_session.execute(select(Invoice.id).where(Invoice.invoice_number == invoice_number)).scalar_one()
 
-    def _forced_failure(*, invoice_number, reason, now, failure_mode=False):
+    def _forced_failure(*, invoice_number, amount, now, failure_mode=False):
         return {
             "success": False,
-            "action": "escalate",
+            "action": "voice",
             "external_id": None,
             "message": "[forced failure for demo]",
             "timestamp": now.isoformat(),
         }
 
-    monkeypatch.setattr(nodes, "request_human_handoff", _forced_failure)
+    monkeypatch.setattr(nodes, "execute_voice", _forced_failure)
 
     event = Event(event_type=EventType.INVOICE_OVERDUE, invoice_id=invoice_id, occurred_at=DEFAULT_AS_OF)
     result = run_invoice(invoice_id, event=event)
 
-    assert result["proposed_action"] == ActionType.ESCALATE  # what economics originally wanted
+    assert result["proposed_action"] == ActionType.VOICE  # what economics originally wanted
     assert result["selected_action"] == ActionType.WAIT  # what actually happened after the forced failure
     assert result["next_state"] == AccountCurrentState.WAIT
-    assert "escalate failed after 2 attempt(s)" in result["error"]
+    assert "voice failed after 2 attempt(s)" in result["error"]
     assert result["tool_result"]["success"] is False
 
 

@@ -516,3 +516,23 @@ functions that expect a Series (score_recovery_probability, etc.) are
 unchanged -- a node reconstructs pd.Series(state["features"]) immediately
 before calling into them; the Series shape only ever lives transiently
 inside a node, never in state.
+
+## Bug found during Day 5's final validation pass: Scenario A's payment
+## insert had no date cap, unlike test_reassessment_loop.py's equivalent
+
+simulate_scenarios.py's scenario_a_successful() writes a real Payment row
+dated DAY10 (2026-09-03) with no cleanup and no cap, same pattern
+tests/test_reassessment_loop.py had before it was fixed -- except this one
+was never caught earlier because no pytest test invokes
+simulate_scenarios.py's functions (confirmed by grep), so it only
+surfaces when someone actually runs `python -m app.agent.simulate_scenarios`
+by hand. Every such run would permanently fail
+synthetic/validators.py's temporal-consistency check. Fixed the same way
+app/attribution/persist.py already handles this exact situation: cap the
+persisted payment_date at DEFAULT_AS_OF - 1 day, leaving the narrative's
+own DAY10 timestamp (used for the PAYMENT_RECEIVED event itself) untouched
+-- only the ledger write is capped. Unlike the pytest-test case, no
+cleanup was added here on purpose: this script's whole point is leaving a
+real, inspectable trail (`decision_logs`/`account_state`/now `payments`)
+behind for rehearsal review, same accepted-side-effect precedent already
+established for this file.

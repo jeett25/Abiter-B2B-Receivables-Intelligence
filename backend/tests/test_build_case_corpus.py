@@ -93,13 +93,16 @@ def test_populated_rows_have_full_dimension_embeddings_and_match_historical_coun
     if db_session.query(CaseEmbedding).count() == 0:
         pytest.skip("case_embeddings not populated yet -- run `python -m app.retrieval.build_case_corpus` first")
 
-    from app.ml.features import HISTORICAL_STATUSES, load_raw_tables
-
-    invoices = load_raw_tables(engine)["invoices"]
-    expected = invoices["status"].isin(HISTORICAL_STATUSES).sum()
+    # Fixed at 9,000 -- the size of the ORIGINAL Day-1 historical pool this
+    # corpus was built against once, in Day 3. NOT recomputed from a live
+    # HISTORICAL_STATUSES count: Day 5's attribution write-back moved
+    # hundreds of LIVE invoices to PAID too, which would inflate that count
+    # without those invoices ever being part of the corpus-building pass.
+    # See app/attribution/DECISIONS.md.
+    EXPECTED_HISTORICAL_CORPUS_SIZE = 9_000
 
     count = db_session.query(CaseEmbedding).count()
-    assert count == expected
+    assert count == EXPECTED_HISTORICAL_CORPUS_SIZE
 
     sample = db_session.query(CaseEmbedding).first()
     assert len(sample.embedding) == EMBEDDING_DIM

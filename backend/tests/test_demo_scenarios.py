@@ -41,10 +41,16 @@ def test_reliable_payer_scenario_waits(db_session):
     assert decision.final_action == ActionType.WAIT
 
 
-def test_chronic_late_scenario_escalates(db_session):
+def test_chronic_late_scenario_now_gets_voice_not_escalate(db_session):
+    """Was ESCALATE at Day-3 time. Reframed after Day 5, subtask 6's
+    ESCALATE amount-threshold fix (see app/decision/DECISIONS.md): this
+    fixture is Rs.118,361, above ESCALATE_LARGE_AMOUNT_THRESHOLD_INR
+    (Rs.100,000), so its uplift is now correctly reduced and VOICE wins
+    instead -- direct, concrete proof of the Day-5 correction, not a
+    regression. See synthetic/seed_demo.py's check_chronic_late_escalate."""
     fixtures = _load_fixtures()
     decision = _decide_by_invoice_number(db_session, fixtures["chronic_late_escalate"]["invoice_number"])
-    assert decision.final_action == ActionType.ESCALATE
+    assert decision.final_action == ActionType.VOICE
 
 
 def test_promise_breaker_scenario_gets_an_initial_action_not_reassess(db_session):

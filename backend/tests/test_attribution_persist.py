@@ -86,6 +86,13 @@ def test_build_attribution_record_not_recovered_has_zero_observed_recovery():
 
 
 def _pick_invoice_without_attribution_record(session, offset: int):
+    """The pool this draws from is small and fixed: only the ~88 invoices
+    the real experiment excluded (already-paid/disputed) lack an
+    attribution_records row at all -- every other live invoice has one
+    since the real `python -m app.attribution.persist` run. offset must
+    stay well within that pool; it was originally 300/301, which
+    overshot once the real persist ran and is what NoResultFound was
+    catching."""
     return session.execute(
         select(Invoice.id)
         .where(Invoice.status == InvoiceStatus.OPEN)
@@ -98,7 +105,7 @@ def _pick_invoice_without_attribution_record(session, offset: int):
 def test_persist_experiment_outcome_recovered_writes_ledger_and_attribution_record(db_session):
     session = SessionLocal()
     try:
-        invoice_id = _pick_invoice_without_attribution_record(session, offset=300)
+        invoice_id = _pick_invoice_without_attribution_record(session, offset=0)
         outcome = _outcome(invoice_id, recovered=True, group=TreatmentGroup.ACTED, amount=75_000.0, base_probability=0.7)
 
         persist_experiment_outcome(outcome, session)
@@ -126,7 +133,7 @@ def test_persist_experiment_outcome_recovered_writes_ledger_and_attribution_reco
 def test_persist_experiment_outcome_not_recovered_touches_only_attribution_record(db_session):
     session = SessionLocal()
     try:
-        invoice_id = _pick_invoice_without_attribution_record(session, offset=301)
+        invoice_id = _pick_invoice_without_attribution_record(session, offset=1)
 
         before_invoice_status = session.get(Invoice, invoice_id).status
         before_account_state = session.get(AccountState, invoice_id).current_state

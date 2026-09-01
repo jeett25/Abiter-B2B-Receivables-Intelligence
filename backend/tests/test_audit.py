@@ -10,6 +10,7 @@ identifiable among any other rows that invoice might have.
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import select
 
 from app.agent.events import Event, EventType
@@ -149,7 +150,10 @@ def test_promise_creation_shape_persists_ptp_score_and_promise_state(db_session)
     assert log.decision == "promise"
 
     assert account_state.current_state == AccountCurrentState.PROMISE
-    assert account_state.promise_score == in_memory["ptp_probability"]
+    # approx: float32->float64 widening through Postgres's wire protocol
+    # can differ from the in-memory Python float in the last bit or two --
+    # not a real behavior mismatch, see app/ml/DECISIONS.md's float32/64 entry.
+    assert account_state.promise_score == pytest.approx(in_memory["ptp_probability"])
 
 
 # -- shape 3: invalid event ----------------------------------------------------

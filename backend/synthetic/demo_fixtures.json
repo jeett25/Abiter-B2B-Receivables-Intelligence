@@ -5,7 +5,8 @@
   },
   "chronic_late_escalate": {
     "invoice_number": "INV-10184",
-    "expected_action": "escalate"
+    "expected_action": "voice",
+    "_note": "was 'escalate' pre-Day-5; reframed after subtask 6's ESCALATE amount-threshold fix (Rs.118,361 > Rs.100,000) -- see synthetic/seed_demo.py and app/decision/DECISIONS.md"
   },
   "promise_breaker_reassess": {
     "invoice_number": "INV-10677",

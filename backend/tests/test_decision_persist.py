@@ -2,6 +2,7 @@
 decision-trace proof against the real DB."""
 from datetime import datetime, timezone
 
+import pytest
 from sqlalchemy import select
 
 from app.core.db import engine
@@ -148,6 +149,8 @@ def test_already_paid_false_alarm_decision_trace_is_reconstructible_from_db(db_s
     account_state = db_session.get(AccountState, live_invoice_id)
     assert account_state.current_state == AccountCurrentState.CLOSED_PAID
     assert account_state.next_action == ActionType.STOP
-    assert account_state.recoverability_score == decision.base_probability
+    # approx: same float32/64 wire-protocol precision artifact as
+    # test_audit.py's promise_score check, not a real behavior mismatch.
+    assert account_state.recoverability_score == pytest.approx(decision.base_probability)
     assert account_state.promise_score == NO_ACTIVE_PROMISE_SCORE
     assert account_state.expected_payment_date is None

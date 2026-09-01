@@ -19,8 +19,12 @@ same invoice_number shows up every time this is rehearsed/recorded:
   A (successful)      -> high_value_act
   B (broken promise)  -> promise_breaker_reassess (fits thematically too)
   D (already paid)    -> already_paid_suppress
-  F (tool failure)    -> chronic_late_escalate (guaranteed ESCALATE, same
-                          fixture test_resilience.py's forced-failure test uses)
+  F (tool failure)    -> chronic_late_escalate (guaranteed VOICE post-Day-5's
+                          ESCALATE amount-threshold fix -- was ESCALATE at
+                          Day-3 time; see app/decision/DECISIONS.md and
+                          synthetic/seed_demo.py -- same fixture
+                          test_resilience.py's forced-failure test uses,
+                          now forcing execute_voice, not request_human_handoff)
 C (dispute) and E (low economic value) have no matching fixture -- C queries
 for a real disputed live invoice directly; E scans the live pool via Day-3's
 fast run_full_live_pass() (loads tables once, no LLM/embedding calls) for a
@@ -42,7 +46,7 @@ from app.agent.graph import run_invoice
 from app.agent.scanners import scan_for_broken_promises
 from app.agent.state_machine import TransitionContext, determine_next_state
 from app.core.db import SessionLocal
-from app.decision.service import run_full_live_pass
+from app.decision.service import DEFAULT_AS_OF, run_full_live_pass
 from app.models import Invoice, Payment
 from app.models.enums import AccountCurrentState, ActionType, InvoiceStatus
 
@@ -94,9 +98,18 @@ def scenario_a_successful() -> None:
     )
 
     invoice = _invoice_row(invoice_id)
+    # Capped at DEFAULT_AS_OF - 1 day, same rule app/attribution/persist.py
+    # uses -- DAY10 (2026-09-03) is after the dataset's frozen "now"
+    # (REFERENCE_DATE, mirrored by DEFAULT_AS_OF), so writing it literally
+    # to the ledger would permanently fail
+    # synthetic/validators.py's temporal-consistency check on every future
+    # run of this rehearsal script. The narrative's own DAY10 timestamp
+    # (used for the PAYMENT_RECEIVED event below) is unaffected -- only the
+    # persisted payment_date is capped.
+    ledger_payment_date = min(DAY10.date(), DEFAULT_AS_OF.date() - timedelta(days=1))
     session = SessionLocal()
     try:
-        session.add(Payment(invoice_id=invoice_id, amount=Decimal(str(invoice.amount)), payment_date=DAY10.date(), method="upi"))
+        session.add(Payment(invoice_id=invoice_id, amount=Decimal(str(invoice.amount)), payment_date=ledger_payment_date, method="upi"))
         session.commit()
     finally:
         session.close()
@@ -230,17 +243,17 @@ def scenario_f_tool_failure() -> None:
     _banner("SCENARIO F -- tool/LLM failure: action -> failure -> retry -> fallback -> safe state -> audit")
     invoice_id = _invoice_id_by_number(FIXTURES["chronic_late_escalate"]["invoice_number"])
 
-    def _forced_failure(*, invoice_number, reason, now, failure_mode=False):
+    def _forced_failure(*, invoice_number, amount, now, failure_mode=False):
         return {
             "success": False,
-            "action": "escalate",
+            "action": "voice",
             "external_id": None,
             "message": "[forced failure for demo]",
             "timestamp": now.isoformat(),
         }
 
-    original = nodes.request_human_handoff
-    nodes.request_human_handoff = _forced_failure
+    original = nodes.execute_voice
+    nodes.execute_voice = _forced_failure
     try:
         result = run_invoice(
             invoice_id,
@@ -248,10 +261,10 @@ def scenario_f_tool_failure() -> None:
             persist=True,
         )
     finally:
-        nodes.request_human_handoff = original
+        nodes.execute_voice = original
 
     _step(
-        "forced escalation failure",
+        "forced voice-call failure",
         proposed_action=result["proposed_action"].value,
         selected_action_after_fallback=result["selected_action"].value,
         next_state=result["next_state"].value,

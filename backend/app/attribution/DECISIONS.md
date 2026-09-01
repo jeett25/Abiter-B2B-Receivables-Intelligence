@@ -520,6 +520,32 @@ Simpson's-paradox catch, the amount-distribution verification, the
 composition-weighted value choice, and the demonstrated before/after
 decision change) lives there.
 
+## synthetic/seed_demo.py resets all 6 fixtures uniformly --
+## attribution_records intentionally stays out of sync with 3 of them afterward
+
+3 of the 6 curated demo fixtures (synthetic/demo_fixtures.json) were swept
+into the Day-5 experiment (no exclusion was ever added for them) and
+resolved via the control arm, breaking their demo narratives. The first
+version of seed_demo.py special-cased just those 3 for reset and treated
+the other 3 as "verify-only" (read persisted state, no mutation) -- that
+split was itself found to be a bug: chronic_late_escalate's persisted
+account_state predated subtask 6's ESCALATE fix, so "verify-only" silently
+checked a stale expectation instead of the current correct one. Fixed by
+unifying all 6 through one path (clean up write-back artifacts if any,
+clear stale decision_logs/payment_promises, re-run the current agent
+fresh) -- see synthetic/seed_demo.py's own docstring for the full account.
+
+attribution_records rows are left untouched for all 6 fixtures (a true
+historical fact: "this invoice really was in the control arm and the
+experiment really did simulate that outcome for it", where applicable).
+Consequence, noted so it isn't mistaken for a bug later: after a
+seed_demo.py reset, attribution_records and decision_logs/account_state
+will legitimately disagree about the 3 write-back-affected invoices'
+history (attribution_records says "recovered Rs.X via organic
+probability"; decision_logs shows a fresh, different assessment from the
+reset). Any future re-query of attribution numbers should keep this in
+mind for those invoice_ids specifically.
+
 ## Reporting must be per-stratum, not just pooled -- confirmed for subtask 4
 
 Randomization was stratified by customer_segment specifically so
