@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import attribution, decisions, invoices, metrics
+from app.api.routes import attribution, decisions, demo, invoices, metrics
 
 app = FastAPI(
     title="B2B Receivables Decision Intelligence API",
@@ -29,6 +29,7 @@ app.include_router(invoices.router)
 app.include_router(decisions.router)
 app.include_router(metrics.router)
 app.include_router(attribution.router)
+app.include_router(demo.router)
 
 
 @app.get("/health", tags=["health"])

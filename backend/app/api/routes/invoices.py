@@ -58,10 +58,14 @@ def list_invoices(
     db: Annotated[Session, Depends(get_db)],
     current_state: str | None = Query(default=None),
     segment: str | None = Query(default=None),
+    invoice_number: str | None = Query(default=None, description="Case-insensitive substring match, e.g. '10184'."),
     limit: int = Query(default=50, le=500, gt=0),
     offset: int = Query(default=0, ge=0),
 ):
     query = _base_query()
+
+    if invoice_number is not None:
+        query = query.where(Invoice.invoice_number.ilike(f"%{invoice_number}%"))
 
     if current_state is not None:
         try:

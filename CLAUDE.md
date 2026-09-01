@@ -421,12 +421,219 @@ produced plain ASCII/UTF-8 correctly. Worth remembering for any future
 redirect-to-file command in this project: prefer Git Bash over PowerShell
 `>` when the output must be plain-text-parseable by another tool.
 
+## Day 6: Frontend live-data wiring — subtasks 1–10 of 17 complete
+
+Full plan is Phase A (functional integration, subtasks 1–8) → Phase B (hosted
+verification, 9–10) → Phase C (design system + console redesign + landing
+page, 11–13) → Phase D (observability/RAG/LLMOps panels + polish, 14–15) →
+Phase E (deploy frontend, 16) → Phase F (demo-recording rehearsal, 17).
+Deliberately sequenced functionality-before-visuals, same precedent as every
+prior day's "defer polish" decisions. **Phases A+B (1–10) are done, tested
+against real data at every step, not just compiled.** Phase C is next and
+needs the user's design direction first (style/palette/etc.), not a
+unilateral Claude decision — see `ui-ux-pro-max` skill when that starts.
+
+**Subtask 1 (types reconciliation):** `frontend/lib/types.ts` rewritten
+against the REAL API shapes (`app/api/schemas.py` + `app/agent/audit.py`'s
+actual JSONB writers), not the stale Day-3 mock shapes. Real bugs fixed:
+`AccountCurrentState` was missing `dispute_review` (added in Day 4, types.ts
+never updated); `PolicyChecks` used Day-3's `final_action`/`result` keys,
+but virtually every real row is written by Day-4's `audit.py` using
+`selected_action`/`policy_result` instead (both kept, legacy ones marked
+`@deprecated`, since `schemas.py` returns raw JSONB and either can appear on
+the wire). Added types that never existed: `InvoiceTimeline`,
+`TimelineEntry`, `MetricsResponse`, `AttributionHeadline`,
+`AttributionSliceOut`, `ArchetypeDiagnosticRow`, `AttributionResponse`,
+`ToolResult`, `TreatmentGroup`.
+
+**Subtasks 2–4 (connect list/detail/metrics+attribution):** `frontend/lib/api.ts`
+(new) is the one typed fetch client for all of `app/api`'s GET routes —
+`cache: "no-store"` throughout since every route reads live persisted state.
+Invoices list (`app/invoices/page.tsx`) is a Server Component driven
+entirely by `searchParams` (status/segment/`invoice_number` filters +
+`offset` pagination) — filtering delegated to `InvoiceFilters.tsx` (client
+component) so picking a Status applies immediately via `router.push`, no
+submit click required (explicit user ask). Invoice Detail
+(`app/invoices/[invoiceId]/page.tsx`) fetches invoice+decision+timeline in
+parallel; defensive against every field Day-4's `audit.py` only
+conditionally populates (`candidate_actions`, `recovery_probability`,
+`retrieved_cases`, `selected_action` vs `final_action`, etc. — see
+`lib/types.ts`'s own comments for which shape is dominant). Metrics page
+adds real per-action/per-segment attribution tables (`GET /api/attribution`,
+`include_diagnostics` deliberately left `false` — hidden-ground-truth
+archetype fields never belong on a production-facing screen, matching the
+discipline `app/attribution/DECISIONS.md` already established). Deleted
+`frontend/lib/mockData.ts` and the dead `EscalationAppropriateness` type
+once nothing referenced them anymore.
+
+**Subtask 5 (navigation):** `RefreshButton.tsx` (shared client component)
+uses `router.refresh()` (confirmed via the installed Next docs — this Next
+version's `error.tsx` boundary prop is `retry`, not `reset`, a real
+breaking-change trap worth remembering for any future error-boundary code).
+Found via direct user testing that `router.refresh()` gives zero visible
+feedback when the underlying data hasn't changed — fixed with a
+`useTransition`-driven "Refreshing... → Last refreshed HH:MM:SS" state.
+Also fixed: the invoices list's failed-fetch "Retry" link used to reset to
+the bare `/invoices` URL, discarding the user's active filters — now retries
+the same filtered/paginated URL.
+
+**Subtask 6 ("Why this decision?" + LLM panel):** Confirmed via
+`app/decision/policy.py`/`persist.py` that the chosen action is fully
+deterministic (Economics Engine + Policy Gate) — added an explicit callout
+saying so, correcting the master doc's original "LLM drafts a
+recommendation" framing against what Day 4 actually scoped (LLM used only
+for promise extraction, never the decision). **Real bug found and fixed via
+live testing, not just code reading:** `EventType.PROMISE_CREATED` is
+synthesized by `extract_promise_node` ONLY on a successful extraction,
+replacing the round's `event` before the audit write — so a persisted row
+with `trigger_event.event_type == "promise.created"` means the LLM
+succeeded, while `"customer.responded"` surviving to the persisted record
+means the LLM ran and found nothing. The first implementation had this
+backwards (checked only for `"customer.responded"`, missing the success
+case entirely) — confirmed via a live test round on `INV-10677`, fixed, and
+reconfirmed with a second live round showing the correct 66.5% PTP score.
+Deliberately does NOT show model latency/retry count for the LLM call
+specifically — `extract_promise_node` never captures that into `GraphState`
+(confirmed by reading it), so fabricating it would be dishonest; user chose
+"frontend-only honest scope" over extending the backend to capture it.
+
+**Subtask 7 (state timeline):** `GET /api/invoices/{id}/timeline` now
+includes `state_transition_path` per decision event (small addition to
+`app/api/routes/decisions.py`); frontend renders it as an arrow-joined path
+per timeline entry.
+
+**Subtask 8 (safety/failure visualization):** New Invoice Detail section
+surfacing dispute/already-paid/policy-blocked-or-escalated/tool-call
+outcome from real `policy_checks` fields (`ToolResult` type added, matching
+`app/agent/tools.py`'s actual `_tool_result()` shape exactly). **Real bug
+found via live testing against the forced-failure demo scenario
+(`INV-10184`):** the existing "Proposed X, overridden to Y by policy" text
+unconditionally attributed any `proposed_action != selected_action`
+mismatch to the Policy Gate — but `dispatch_action`'s tool-failure fallback
+(action fails twice → falls back to WAIT) also produces this mismatch, with
+`policy_result` still `allowed` (the Gate approved the original action;
+nothing about it was overridden by policy). Fixed to branch on
+`policy_result`: only says "overridden by policy" when the Gate actually
+blocked/escalated, otherwise says "fell back after a tool failure."
+
+**Also found and fixed while testing (not part of any single subtask):**
+(1) **`GET /api/invoices` had no way to search by invoice number** — with
+~900 invoices and only status/segment filters, a specific demo invoice was
+unfindable by paging. Added `invoice_number` (case-insensitive substring
+match) to the route and a matching search field in `InvoiceFilters.tsx`.
+(2) **Critical `.gitignore` bug, found only because a commit was about to
+happen**: the root `.gitignore`'s Python-template `lib/` rule (no leading
+slash) was matching `frontend/lib/` at any depth, not just Python
+build-artifact `lib/` directories. Confirmed via `git log -- frontend/lib/`
+returning nothing that `frontend/lib/` (`types.ts`, `api.ts`, and the
+now-deleted `mockData.ts`) had **never been committed once since Day 3** —
+existed only on local disk. Fixed with a targeted negation
+(`!frontend/lib/` + `!frontend/lib/**`) rather than removing the generic
+rule, which still correctly excludes real Python build artifacts elsewhere.
+**Lesson for any future gitignore edit in this repo**: a bare pattern with
+no leading slash matches at every directory depth, not just the level it
+looks like it's targeting — verify with `git log -- <path>` before assuming
+something has been tracked, especially before a first commit/push of a
+long-lived directory.
+
+**Subtask 9 (hosted integration):** Corrected the plan's own assumed path
+first — there is no Redis and no live LangGraph/ML/retrieval call in the
+deployed API's request path (every route reads already-persisted state, see
+`app/api/DECISIONS.md`), so the real test is `Browser → local frontend →
+Render → Supabase`. Verified by pointing `frontend/.env.local` at the
+deployed Render URL: 27.9s cold start on the first request (matches the
+documented Render free-tier trade-off exactly), fast thereafter, no CORS or
+serialization errors. Reverted `.env.local` back to `localhost:8000`
+afterward per the established local/hosted split.
+
+**Subtask 10 (demo-case routing):** New `GET /api/demo-fixtures`
+(`app/api/routes/demo.py`) reads `synthetic/demo_fixtures.json` server-side
+and resolves each fixture to its current real `invoice_id` — single source
+of truth, survives a future `seed_demo.py` re-pin automatically (chosen
+over hardcoding UUIDs frontend-side). `DemoCaseMenu.tsx` in the root nav
+(plain `<details>/<summary>`, no client JS) lists all 6 fixtures plus two
+extra entries for the categories with no single pinned invoice: **Dispute**
+links to the existing `current_state=dispute_review` filter (56 real
+invoices, no need to pick one server-side); **Abandoned** links to
+`current_state=closed_abandoned`, which correctly shows an empty list —
+that emptiness IS the already-documented Day-4 finding (0 live invoices
+resolve here today), not something to fake around.
+
+**Not yet done — Phase C onward (subtasks 11–17):** design system → console
+redesign → landing page (merged with the pipeline-visualization
+storytelling per the earlier plan-review) → observability/RAG/LLMOps panels
+(planned as small static "reported" numbers from Day 3/4's own diagnostic
+output, not a new live-eval endpoint) → recruiter/demo polish → deploy
+frontend (Vercel) → demo-recording rehearsal.
+
+**Known local/remote data-parity caveat for resuming on a different
+machine:** the local Docker Postgres now has extra ad-hoc test rows (a few
+manually-fired `CUSTOMER_RESPONDED`/forced-failure rounds against
+`INV-10677`/`INV-10184`, used to verify subtasks 6 and 8 live) that only
+exist on the machine they were run on — never pushed (the DB isn't in git),
+and not present in Supabase either. Harmless (append-only decision_logs,
+same accepted-side-effect category as `simulate_scenarios.py`'s own runs),
+but don't be surprised if a fresh machine's local DB or Supabase shows a
+different "latest" decision for those two invoices than what was screenshotted
+during this session.
+
 ## What's next (for future-session context)
 
-Days 1–4 are all done (see their sections above). **Day 5, in progress this session**: attribution engine (randomized holdout, ACTION_UPLIFT correction for ESCALATE actually applied — see app/attribution/ and app/decision/ DECISIONS.md files), the dashboard API (app/api/, 6 endpoints, see app/api/DECISIONS.md), and the deploy (Supabase + Render, live and verified — see the "Day 5, subtask 8" section above) are all done. `synthetic/seed_demo.py` is also done — found and fixed a real problem first: 3 of the 6 curated demo fixtures (synthetic/demo_fixtures.json) had been swept into the Day-5 attribution experiment and resolved (flipped to CLOSED_PAID), breaking their intended demo narrative, since the experiment was never given an exclusion list for them. The script undoes that (deletes the write-back's Payment/decision_logs/payment_promises rows for those 3, re-runs the current agent fresh) and prints a concrete PASS/WARN per fixture every run — all 6 currently PASS. See app/attribution/DECISIONS.md for why attribution_records intentionally stays out of sync with these 3 invoices' history afterward (a documented, accepted consequence, not a bug).
+Days 1–5 are all done (see their sections above). **Day 6, in progress —
+Phases A+B (subtasks 1–10 of 17) done**, see the "Day 6: Frontend live-data
+wiring" section above for the full account of what was built and every real
+bug found/fixed along the way. Frontend is now fully wired to the live
+backend across all 3 screens (invoice list, invoice detail/explainability,
+metrics+attribution), hosted-integration-verified against the real deployed
+Render+Supabase stack, and has a working demo-case selector.
 
-**Remaining for Day 5**: the final Day-5 validation pass (subtask 11 of the Day-5 subtask list — full checklist + full pytest run).
+**Remaining for Day 6 — Phase C onward (subtasks 11–17):**
+1. **Design system** (typography, spacing, cards, tables, badges, status
+   colors, buttons, charts, nav) — needs the user's design direction first
+   (style/palette/mood), not a unilateral choice; use the `ui-ux-pro-max`
+   skill once that direction is set.
+2. **Redesign the console** (Overview/Invoices/Decision
+   Detail/Timeline/Experiments) — gets the most polish time, this is what
+   the demo actually shows.
+3. **Landing page**, merged with the pipeline-visualization storytelling
+   (EVENT→PREDICT→RETRIEVE→DECIDE→ACT→MEASURE→LEARN) — built AFTER the
+   console works, deliberately, so it isn't designed around functionality
+   that later changes.
+4. **Observability/RAG/LLMOps panels** — small, mostly static "reported"
+   numbers pulled from Day 3/4's own diagnostic output (retrieval
+   self-retrieval@1, recall@5; reliability figures), NOT a new live-eval
+   endpoint or monitoring stack — matches the user's own "don't over-build
+   this" instruction from the Day-6 planning conversation.
+5. **Recruiter/demo polish** (transitions, hover/loading/empty/error
+   states, responsive layout, micro-interactions).
+6. **Deploy frontend** (Vercel) + add its origin to the backend's CORS
+   allowlist (`app/main.py` currently only allows `http://localhost:3000`).
+7. **Demo-mode rehearsal** — the exact click path for recording (Landing →
+   Console → Invoice → Decision → Evidence → Economics → Policy → Action →
+   Timeline → Experiment), no searching around during the real recording.
 
-Day 6: frontend wiring to the live backend (now that Day 5 built the API it needs) + the deferred visual/CSS design pass, deploy frontend, deliberate failure-handling demo dry-run (Day 4 already has a rehearsed version of this in `simulate_scenarios.py`'s Scenario F — reuse it, don't rebuild it). Day 6 evening–7: README, pitch deck, video script/recording, submission.
+Day 6 evening–7 (unchanged from the original plan): README, pitch deck,
+video script/recording, submission.
 
 **IMPORTANT — REMIND USER BEFORE ANY DEMO RECORDING SESSION:** the video must showcase the hosted stack (deployed frontend + Render backend + Supabase DB), not `localhost`. Local `.env` should point at local Docker Postgres by default for all Day 6 dev work — Render's own `DATABASE_URL` (set in its dashboard) is independent of local `.env` and always points at Supabase already. But right before actually recording: (1) temporarily point local `.env` at Supabase, (2) run `python -m synthetic.seed_demo` against it to reset the 6 curated demo fixtures there (a Day-5 restore from `deploy.dump` reverted Supabase's fixtures back to their broken pre-seed-demo state — local was fixed via this same script on 2026-09-04, Supabase was not, as of this note), (3) point `.env` back to local afterward, (4) record against the live hosted URLs, not localhost. See the Day 5 sections above (subtask 8 deploy notes, subtask 9 seed_demo.py) for the full history of why this local/Supabase split exists and what went wrong when it was blurred.
+
+**Switching machines (work PC → home PC) mid–Day 6, this session:** after
+this commit, `frontend/lib/` (previously never-tracked due to the
+`.gitignore` bug fixed today) is finally in git, so a fresh `git pull` at
+home gets the real, current frontend — verify this by checking
+`frontend/lib/types.ts` and `api.ts` actually exist post-pull, not by
+assuming. The home PC's **local Postgres was only ever synced with Day-1's
+data** (see the "Tonight: Day-1 home-PC transfer" section above) — it has
+never been re-synced through Days 2–6, so it will NOT have the ML
+models/decision_logs/attribution results/demo fixtures the frontend now
+expects. Two options for continuing Day 6 (mostly design/polish work, which
+needs *some* real app screens to look at) at home: (a) point
+`frontend/.env.local` at the deployed Render URL (`https://b2b-receivables-intelligence.onrender.com`)
+and design against the real hosted Supabase data directly — simplest,
+matches what was already verified working in subtask 9, but Supabase's 6
+demo fixtures are currently in their stale broken state (see the reminder
+above) until `seed_demo.py` is run against it; or (b) do a fresh
+`pg_dump`/`pg_restore` transfer of the work PC's current local DB, same
+mechanism as the original Day-1 transfer. (a) is recommended for Day 6's
+remaining design-focused subtasks, given the time pressure and that a
+Postgres re-sync is a detour with no design-work benefit.

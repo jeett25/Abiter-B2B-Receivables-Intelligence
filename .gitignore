@@ -15,6 +15,14 @@ downloads/
 eggs/
 .eggs/
 lib/
+# The generic Python-build lib/ rule above has no leading slash, so it
+# unintentionally matches frontend/lib/ too (real committed TypeScript
+# source, not a build artifact) -- confirmed via `git log -- frontend/lib/`
+# that this directory had NEVER been tracked since Day 3. Un-ignore it
+# specifically rather than removing the generic rule, which still correctly
+# excludes actual Python build/lib/ artifacts elsewhere in the repo.
+!frontend/lib/
+!frontend/lib/**
 lib64/
 parts/
 sdist/

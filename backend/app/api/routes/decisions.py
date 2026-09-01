@@ -74,12 +74,21 @@ def get_timeline(invoice_id: UUID, db: Annotated[Session, Depends(get_db)]):
 
     events: list[TimelineEntry] = []
     for log in logs:
+        # state_transition_path is only ever populated by the Day-4 agent
+        # shape (app/agent/audit.py) -- absent (not an empty list) on the
+        # one invoice still written by Day-3's persist.py path, since that
+        # shape never computed one. .get() rather than indexing so this
+        # degrades to the plain decision/reason summary either way.
+        detail: dict = {"decision": log.decision, "reason": log.reason}
+        state_transition_path = log.policy_checks.get("state_transition_path")
+        if state_transition_path:
+            detail["state_transition_path"] = state_transition_path
         events.append(
             TimelineEntry(
                 timestamp=log.timestamp,
                 type="decision",
                 summary=f"{log.decision} -- {log.reason}",
-                detail={"decision": log.decision, "reason": log.reason},
+                detail=detail,
             )
         )
     for payment in payments:
