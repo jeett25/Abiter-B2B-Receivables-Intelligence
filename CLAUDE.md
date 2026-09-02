@@ -894,6 +894,304 @@ built: keep raw and CUPED-adjusted estimates both (never replace), log a
 and add tests for unbiasedness, the covariate being genuinely pre-treatment,
 and variance actually dropping.
 
+## Home-Mac session (2026-09-02 evening–night): root-cause classifier + demo-consistency bug fixes
+
+This entire session ran on the **home Mac**, not the work PC — the "Switching
+machines" note below (written earlier the same day) already flagged that this
+Mac's local Postgres was never re-synced past Day 1. The user had made DB
+changes and a fresh dump on the work PC earlier that day but the dump never
+made it over. Everything in this section happened against the home Mac's
+local DB, independent of (and not yet reconciled with) whatever state the
+work PC is actually in.
+
+**Unresolved cross-machine DB discrepancy (carries forward, see handoff
+prompt given to the user for a fresh session on the work PC):** the home
+Mac's local attribution numbers didn't match this file's own documented
+figures (pooled amount-weighted rate showed positive/+6-7% here vs. the
+documented -3.1%). One real, confirmed cause was found and fixed (`INV-10706`
+had a stray `attribution_records` row predating the one-invoice fix already
+documented above — deleted, `evaluate.py` rerun) but this did **not** fully
+close the gap, and the root cause of the remaining discrepancy was never
+fully identified. Given time pressure, the user chose to treat this Mac's
+current DB as the working state for tonight rather than keep chasing it —
+**this is a deliberate, temporary call, not a resolution.** A fresh Claude
+Code session was asked to investigate this properly on the work PC; check
+for its findings/report before assuming either machine's numbers are
+"correct."
+
+**Also found and fixed along the way:** `evaluation_snapshots` (the table
+from the "metrics staleness bug" fix above) was missing on this Mac entirely
+— an `alembic upgrade head` had never been run here after that migration was
+authored. Applied; `persist_evaluation.py` rerun.
+
+### Root-cause classifier (new capability) — `app/ml/train_root_cause.py`
+
+Fills a real gap identified against the Track-03 problem statement's own
+"decides ... *why* it's late" claim: `true_root_cause` (cash_flow_stress /
+dispute / oversight) was previously only ever used for the `dispute` value
+(via `detect_dispute()`'s deterministic passthrough) — `cash_flow_stress` vs.
+`oversight` was generated in the synthetic data but never predicted or
+surfaced anywhere.
+
+**Deliberately 2-class, not 3-class**: trained only on non-disputed
+historical rows, predicting cash_flow_stress vs. oversight. Dispute is
+excluded because it's already a reliable, deterministic, real-world-
+observable signal the Policy Gate reads directly — having a model
+re-predict it would be redundant and strictly worse. Evaluation output is
+explicit that this answers "cash-flow stress vs. oversight *given the
+invoice is not disputed*," never reported as a three-way production
+accuracy number.
+
+- **Methodology**: identical to Day 2's recovery/PTP models — same
+  `build_feature_table()` (due_date cutoff, point-in-time safe, unchanged),
+  same Experiment A time-based split, XGBoost + isotonic calibration.
+  `app/ml/splits.py` gained `split_root_cause_table()`;
+  `app/ml/labels.py` gained `root_cause_label()` (asserts it's never called
+  on a disputed row).
+- **Results**: ROC-AUC ≈0.757 (test), PR-AUC ≈0.648, Brier ≈0.196
+  (calibrated). Archetype sanity check (verification-only, hidden ground
+  truth) tracks the generator's own per-archetype `root_cause_weights`
+  closely across all 7 non-disputed archetypes (e.g. `cash_constrained`:
+  true 0.90 vs. predicted mean 0.79, observed 0.90).
+- **Persisted** via `app/ml/persist.py` (now trains/saves all 3 models in
+  one run) — `root_cause_model.joblib` + `root_cause_calibrator.joblib`.
+
+**Live wiring — "context, not selector" by explicit design**: the pipeline
+is Root Cause → Recovery Probability → Economics → Policy Gate → Final
+Action, but Economics and Policy remain the sole decision authority. Root
+cause only perturbs one input to Economics, via a small, **confidence-
+gated, bounded** additive nudge to specific actions' uplift —
+`ROOT_CAUSE_UPLIFT_ADJUSTMENT` in `app/decision/config.py` (cash_flow_stress
+→ +0.03 PAYMENT_LINK; oversight → +0.02 EMAIL/WHATSAPP), applied only when
+`root_cause_probability >= ROOT_CAUSE_CONFIDENCE_THRESHOLD` (0.6). Sized
+specifically so it can only tip a genuinely close EV race, never override a
+clear winner or bypass the materiality-gated abstention rule — confirmed by
+tests (`test_economics.py`), including one live case where it flipped a
+real invoice (`INV-10040`, the `low_value_stop` demo fixture) from WHATSAPP
+to PAYMENT_LINK on a ~₹45 margin.
+
+- `app/decision/economics.py`: `action_uplift()`/`probability_given_action()`/
+  `compute_action_ev()`/`rank_actions()`/`recommend_action()` all gained
+  optional `root_cause_label`/`root_cause_probability` params, defaulting to
+  `None`/`0.0` (fully backward compatible — every existing caller/test
+  unaffected).
+- `app/decision/service.py`: `predict_root_cause()` added, called only when
+  `not is_disputed`; wired into `decide_from_feature_row()`; `Decision`
+  dataclass gained `root_cause_label`/`root_cause_confidence` fields.
+- `app/decision/persist.py`: `decision_logs.model_scores["root_cause"]` —
+  no migration needed (JSONB).
+- **LangGraph agent layer wired too** (`app/agent/state.py` — `GraphState`
+  gained `root_cause_label`/`root_cause_confidence`; `nodes.py` — `score_ml`
+  now computes root cause before recovery probability, `run_economics`
+  passes it through; `audit.py` — `_build_model_scores` includes it). This
+  was a deliberate architectural-consistency fix: the LangGraph path (what
+  `final_integration_pass`/the actual persisted 900-invoice decisions use)
+  had NOT been wired in the first pass, only the Decision Service path had
+  — meaning root cause would have shown up in the Metrics page's EV
+  numbers but never in any real per-invoice decision trace. Fixed before
+  it shipped half-done.
+- **Frontend**: `lib/types.ts` gained `RootCauseScore`/`ModelScores.root_cause`.
+  Invoice Detail page shows it as a compact row inside the existing
+  "Predictive models" card (deliberately not a new grid column — it IS
+  another model's output, lowest-risk placement). Observability page
+  gained a third model-calibration card alongside Recovery/PTP.
+
+### `decision_logs` had no reliable creation-order column — real bug, fixed
+
+`timestamp` is the *business* event moment — identical across an entire
+batch run (every invoice processed by the same `final_integration_pass`
+invocation shares it) — so `ORDER BY timestamp DESC` alone could not break
+ties, and Postgres doesn't guarantee row order without an explicit
+tiebreaker. This meant `GET /api/invoices/{id}/decision` could
+non-deterministically serve a **stale** row instead of the true latest one
+whenever an invoice had been reprocessed more than once — confirmed live
+(a root-cause-populated row silently lost to an older row with the exact
+same timestamp). Fixed with a real `created_at` column (server-default
+`now()`, migration `834e0783e3f1`) plus `ORDER BY timestamp DESC,
+created_at DESC` in both `get_decision` and `get_timeline`
+(`app/api/routes/decisions.py`), and the same fix in
+`tests/test_audit.py`'s `_fetch_decision_log` helper (which also had a
+false "content is deterministic across reruns" assumption baked in — it
+isn't, simulated tools' `external_id` is a random UUID per dispatch).
+
+**Caveat for any pre-migration row**: existing rows all got backfilled with
+the SAME `created_at` (the moment the migration ran), so ties among
+rows that already existed before this fix stay arbitrary — only rows
+written *after* the migration get a genuinely distinct, orderable
+`created_at`. Not retroactively fixable without knowing true historical
+insert order, which was never tracked.
+
+### Live pool: 900 → 391 open invoices (expected, not a bug)
+
+The Day-5 attribution experiment's outcome simulation already flipped 509
+of the original 900 live invoices to `invoices.status = PAID` (writing a
+real payment + updating `account_state` directly). `build_live_feature_table()`
+filters `status == OPEN`, so `final_integration_pass` (dry run and
+`--persist`) now only ever processes the remaining 391 — this is the
+correct, permanent steady-state going forward, not a regression. Confirmed
+via direct query: `262 + 247 = 509` invoices across both attribution arms
+flipped to PAID, `900 - 509 = 391` remaining OPEN, matching exactly.
+
+### Header/timeline inconsistency for attribution-resolved invoices — real bug, fixed
+
+For any of the 509 invoices attribution already resolved, `account_state`
+(updated directly by attribution's `_apply_ledger_write_back`) correctly
+shows `CLOSED · PAID`, but `decision_logs`/the Timeline — only ever updated
+by a genuine decision-engine assessment, which never runs again once an
+invoice leaves the open pool — kept showing whatever was decided *before*
+the payment, with zero indication a payment happened since. Confirmed live
+on multiple real invoices (e.g. a "wait -- no policy constraints triggered"
+decision sitting right below a "CLOSED · PAID" header).
+
+**Fix**: `app/attribution/persist.py` gained `build_closing_decision_log()`
+— every future attribution-simulated recovery now automatically appends an
+honest closing `decision_logs` entry ("recovered via the Day-5 attribution
+experiment's randomized-holdout simulation, not a fresh assessment" —
+`model_scores` stay explicit `None`, never fabricated). Wired into
+`_apply_ledger_write_back()`. A one-off, idempotent, safe-to-rerun backfill
+script (`app/attribution/backfill_closing_decision_logs.py`) retroactively
+added the same entry for all 509 already-affected invoices (skips any
+invoice that already has one, via a `CLOSING_ENTRY_MARKER` substring check
+on `reason`).
+
+**A real ordering bug was found and fixed WITHIN this same fix, live,
+before it shipped**: the closing entry's timestamp can't simply be
+`payment_date` — the real decision engine always business-dates its
+assessments at the project's fixed "today" (`DEFAULT_AS_OF`, ~Aug 27,
+2026), while attribution's `payment_date` is a *counterfactual* date
+computed relative to the invoice's own `due_date`, which is very often
+chronologically **earlier** than Aug 27. Using `payment_date` as-is made
+the closing entry sort *before* the stale assessment it was meant to
+supersede — confirmed live (shipped once, caught by the user re-checking
+the actual page, not by a test). Fixed: `build_closing_decision_log()` now
+queries `MAX(timestamp)` for that invoice and guarantees the closing entry
+sorts strictly after it (`+1 minute` if needed), so it's always the true
+last word in the timeline regardless of the business-date quirk. The first
+(wrong-ordering) batch of 509 backfilled entries was deleted and
+regenerated with the fix in place.
+
+### `reset_and_reassess()` payment cleanup — two real bugs found and fixed in sequence
+
+1. Original cleanup only deleted `Payment` rows with
+   `method == "attribution_simulation"` — missed `app/agent/simulate_scenarios.py`'s
+   Scenario A, which writes its own payment (previously `method="upi"`) as
+   part of its "successful recovery" narrative for the `high_value_act`
+   fixture (`INV-10706`). Confirmed live: after Scenario A ran once, that
+   fixture was permanently stuck showing "already paid" on every future
+   reassessment, since nothing ever cleaned up its payment.
+2. **First fix attempt over-corrected**: made cleanup delete *all* Payment
+   rows for the invoice unconditionally. This broke a different fixture —
+   `already_paid_suppress` (`INV-10298`) needs its real, organic,
+   generator-created payment to stay (that fixture's entire point is a real
+   ledger payment despite `invoices.status` staying `open`) — and the
+   generator's own `rng.choice(["bank_transfer", "upi", "cheque", "card"])`
+   can coincidentally also pick `"upi"`, making method-based filtering
+   ambiguous against a blanket delete. Confirmed live: this exact fixture
+   broke immediately (`next_state=remind` instead of `CLOSED_PAID`) in the
+   very next full-suite run.
+3. **Correct fix**: gave Scenario A's payment its own unambiguous method
+   string (`"scenario_rehearsal"`, distinct from the generator's random
+   choices), and made cleanup conditional again — but on
+   `SYNTHETIC_PAYMENT_METHODS = (ATTRIBUTION_WRITE_BACK_METHOD,
+   SCENARIO_REHEARSAL_METHOD)` instead of write-back-only. Never touches an
+   organic payment; always catches both known synthetic sources.
+4. **The over-correction in step 2 had already committed real damage before
+   the fix landed**: the unconditional-delete version genuinely ran (via
+   `test_reset_and_reassess_already_paid_suppress_stays_suppressed`) and
+   deleted `INV-10298`'s real organic payment from the DB. Confirmed via
+   direct query (zero `payments` rows for that invoice afterward). Manually
+   reconstructed a replacement matching `synthetic/generator.py`'s own
+   `already_paid_false_alarm` logic exactly (`amount = invoice.amount`,
+   `payment_date` within `due_date - [0,5] days`, `status=COMPLETED`) —
+   **not bit-identical to the original random draw** (the exact seeded
+   `rng.randint`/`rng.choice` outcome for this one row is unrecoverable),
+   so this one invoice's payment will no longer match
+   `synthetic/validators.py --fingerprint`'s exact reproducibility hash if
+   that's ever rerun — a known, accepted, one-row exception, not a bug to
+   chase. Scope confirmed contained to this single invoice: `reset_and_reassess`
+   only ever runs against the 6 named demo fixtures, and of those, only
+   `already_paid_suppress` is the `already_paid_false_alarm` archetype (the
+   only one with an organic payment to lose in the first place).
+
+### Demo fixture label staleness — cosmetic but user-facing, fixed
+
+`synthetic/demo_fixtures.json`/`.py`'s `expected_action` field (rendered
+verbatim in the frontend's "Example scenarios" menu subtitle, e.g. "decides
+ESCALATE") was written once at pinning time and never updated after later
+legitimate economics corrections changed the real answer.
+`chronic_late_escalate` said "escalate" (real answer: `voice`, per the
+already-documented Day-5 ESCALATE fix); `promise_breaker_reassess` said
+"reassess" (never literally a persisted value, per Day-4 design — real
+single-shot answer: `voice`). Both updated to say `voice`. Also clarified:
+`app/api/routes/demo.py`'s `_LABELS` dict (the human-readable "Reliable
+payer (correct abstention)"-style names shown in the menu) is a *separate*,
+deliberately-curated mapping — 4 of the 6 map onto
+`simulate_scenarios.py`'s own named scenarios (A/B/D/F), reusing the same
+invoice rather than pinning a 7th. This is intentional design, not a
+mismatch — but it means running `final_integration_pass --persist` (a
+plain batch pass) can silently overwrite a scenario-specific narrative
+(e.g. Scenario F's forced tool-failure demo on `INV-10184`) with an
+unrelated plain decision. **Always run `python -m app.agent.simulate_scenarios`
+last**, after any batch pass, before recording — it re-establishes the
+correct narrative content for all 6 fixtures, and (thanks to the
+`created_at` fix above) reliably wins the ordering now.
+
+### Chart tooltip text-color bug — frontend, fixed, all 4 charts
+
+`contentStyle` (background/border) was set on every `<Tooltip>` but
+`itemStyle`/`labelStyle` (text color) was missing or incomplete on all 4
+Metrics-page charts that use one (`SliceLiftChart`, `AttributionCompareChart`,
+`DecisionMixChart`, `ComparisonChart`) — Recharts fell back to its own
+default (black) text on hover, illegible against the dark tooltip
+background. Fixed in all 4.
+
+### Invoice-list status filter — 9 of 14 options were guaranteed dead ends, pruned
+
+Confirmed via direct query that only 5 of the dropdown's 14
+`AccountCurrentState` values ever actually return results (`wait`,
+`remind`, `escalate`, `dispute_review`, `closed_paid`); 9 were empty.
+5 of those 9 are **structurally permanent** dead ends per this project's
+own design docs — `assessment`, `monitoring`, `broken`, `reassess`, and
+plain `closed` are defined in the enum but never assigned by any rule in
+the codebase (0 rows across the whole dataset, not just today). Removed
+those 5 from `frontend/app/invoices/InvoiceFilters.tsx`'s
+`CURRENT_STATE_OPTIONS`; kept `overdue`/`promise`/`kept`/`closed_abandoned`
+even though currently empty, since those are genuinely reachable given a
+different event sequence (a live promise round, etc.) — `closed_abandoned`
+in particular is deliberately kept even at 0 results, matching the
+`DemoCaseMenu`'s own existing "intentionally empty, and that's the point"
+framing for that state.
+
+### Testing
+
+Ran the full backend suite many times across this session as fixes landed.
+One more real gap surfaced on the last full run:
+`tests/test_demo_scenarios.py::test_high_value_scenario_takes_an_active_intervention`
+calls `decide()` directly with no cleanup (a Day-3-era test, predates
+`simulate_scenarios.py` entirely) — so it's order-dependent on whatever
+last touched `INV-10706` in the same session. After re-running
+`simulate_scenarios.py` (Scenario A ends with that invoice paid), this test
+failed on its old assumption. Fixed the same way `chronic_late_escalate`'s
+test was already reframed: now accepts `STOP` as an equally valid,
+Day-5/6-correct outcome alongside the five active-intervention types,
+with a docstring explaining why (mirrors the `high_value_act`
+low_value_stop/already_paid_suppress fixes above exactly — same root
+pattern, different call site). **Confirmed fully green**: full suite,
+307 tests, 0 failures, at the end of this session.
+
+### Outstanding for the next session (before anything else)
+
+1. **Resolve the cross-machine DB discrepancy** (see the top of this
+   section) — a fresh Claude Code session was pointed at the work PC with
+   its own dump to investigate; read its findings first.
+2. **Make a fresh dump of this Mac's DB** (once the full test suite above
+   is confirmed green and no further DB-writing commands are pending) and
+   send it to the work PC per the established transfer mechanism.
+3. CUPED variance reduction (see "Attribution metric honesty fixes" above
+   — still not built, plan unchanged).
+4. Then: remaining bug sweep, hosting (Vercel + Supabase sync, per the Day
+   6 "What's next" section below), demo-recording rehearsal.
+
 ## What's next (for future-session context)
 
 Days 1–5 are all done (see their sections above). **Day 6, subtasks 1–15 of

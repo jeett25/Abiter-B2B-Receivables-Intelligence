@@ -36,6 +36,8 @@ class GraphState(TypedDict, total=False):
     features: dict[str, Any] | None
     recovery_probability: float | None
     ptp_probability: float | None
+    root_cause_label: str | None  # "cash_flow_stress" | "oversight" | None (disputed invoices)
+    root_cause_confidence: float | None
     retrieved_cases: list[RetrievedCase]
     candidate_actions: list[ActionType]
     economics_ranking: list[ActionEV]

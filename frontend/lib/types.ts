@@ -67,13 +67,25 @@ export interface InvoiceSummary {
   treatment_group: TreatmentGroup | null;
 }
 
+// app/ml/train_root_cause.py's cash_flow_stress-vs-oversight classifier
+// (2-class, non-disputed invoices only -- "dispute" stays the deterministic
+// detect_dispute() passthrough in policy.py, never a model prediction).
+// null for every disputed invoice, since the model is never called for one.
+export interface RootCauseScore {
+  predicted_label: "cash_flow_stress" | "oversight";
+  confidence: number;
+}
+
 // app/agent/audit.py::_build_model_scores -- the real, dominant shape
 // written for virtually every decision_logs row (the live 900-invoice pass
 // + all demo scenarios). candidate_actions is only present when the round
 // actually ran economics (absent on a promise-creation-only round).
+// root_cause is only present on rows written after the 2026-09-02
+// root-cause-classifier addition -- older rows simply won't have the key.
 export interface ModelScores {
   recovery_probability: number | null;
   ptp_probability: number | null;
+  root_cause?: RootCauseScore | null;
   candidate_actions?: ActionEV[];
 }
 

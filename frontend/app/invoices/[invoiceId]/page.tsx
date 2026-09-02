@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Clock, MinusCircle, Scale, ShieldQuestion, XCircle } from "lucide-react";
+import { AlarmClock, AlertTriangle, ArrowLeft, CheckCircle2, Clock, MinusCircle, Scale, ShieldQuestion, Wallet, XCircle } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { ApiError, getDecision, getInvoice, getTimeline } from "@/lib/api";
 import { ActionEV, DecisionTrace, InvoiceSummary, InvoiceTimeline } from "@/lib/types";
@@ -175,6 +175,7 @@ export default async function DecisionTracePage({
           ) : (
             <p className="py-6 text-center text-sm text-text-muted">No model score for this round.</p>
           )}
+          <RootCauseRow rootCause={trace.model_scores.root_cause} isDisputed={trace.policy_checks.is_disputed} />
         </Card>
 
         <Card className="p-5 sm:p-6">
@@ -370,6 +371,60 @@ const SIGNAL_TONE_CLASSES: Record<SignalTone, string> = {
   escalate: "text-status-escalate bg-status-escalate-soft",
   neutral: "text-text-faint bg-surface-2",
 };
+
+// app/ml/train_root_cause.py's classifier -- cash_flow_stress vs. oversight,
+// non-disputed invoices only (see RootCauseScore's comment in lib/types.ts).
+// Sits inside "Predictive models" rather than its own card/grid column: it
+// IS a predictive model's output, and the existing gauges card already has
+// the vertical room for one more compact row -- no grid/breakpoint changes
+// needed elsewhere on the page.
+const ROOT_CAUSE_COPY: Record<"cash_flow_stress" | "oversight", { label: string; icon: typeof Wallet; tone: SignalTone; why: string }> = {
+  cash_flow_stress: {
+    label: "Cash-flow stress",
+    icon: Wallet,
+    tone: "escalate",
+    why: "Recent payment behavior + historical delay pattern",
+  },
+  oversight: {
+    label: "Oversight",
+    icon: AlarmClock,
+    tone: "success",
+    why: "No cash-flow signal — likely just missed",
+  },
+};
+
+function RootCauseRow({
+  rootCause,
+  isDisputed,
+}: {
+  rootCause: DecisionTrace["model_scores"]["root_cause"];
+  isDisputed: boolean | null;
+}) {
+  if (!rootCause) {
+    return (
+      <p className="mt-4 border-t border-border pt-3 text-center text-xs text-text-faint">
+        {isDisputed ? "Root cause: not computed — invoice is disputed." : "Root cause: not available for this decision round."}
+      </p>
+    );
+  }
+
+  const copy = ROOT_CAUSE_COPY[rootCause.predicted_label];
+  const Icon = copy.icon;
+  return (
+    <div className="mt-4 flex items-center gap-2.5 border-t border-border pt-3">
+      <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${SIGNAL_TONE_CLASSES[copy.tone]}`}>
+        <Icon size={14} />
+      </span>
+      <div className="min-w-0">
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-xs font-semibold text-text">Root cause: {copy.label}</span>
+          <span className="font-mono-tabular text-[11px] text-text-muted">{formatPercent(rootCause.confidence)}</span>
+        </div>
+        <p className="mt-0.5 truncate text-[11px] text-text-faint">{copy.why}</p>
+      </div>
+    </div>
+  );
+}
 
 function SignalCard({
   icon: Icon,

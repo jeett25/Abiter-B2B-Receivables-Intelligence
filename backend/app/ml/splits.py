@@ -86,6 +86,15 @@ def split_ptp_table(df: pd.DataFrame, seed: int = SEED) -> dict:
     return time_based_split(df, date_col=date_col, label_col="kept", seed=seed)
 
 
+def split_root_cause_table(df: pd.DataFrame, seed: int = SEED) -> dict:
+    """Experiment A for the root-cause table -- same issue_date bucketing as
+    split_recovery_table(), since it's built from the same historical rows
+    (just filtered to non-disputed and labeled differently)."""
+    date_col = "issue_date"
+    assert date_col in df.columns, f"root-cause table missing {date_col!r}"
+    return time_based_split(df, date_col=date_col, label_col="root_cause_label", seed=seed)
+
+
 def customer_based_split(df: pd.DataFrame, customer_col: str = "customer_id", seed: int = SEED) -> dict:
     """Experiment B: customer-level split, no time constraint, train/test only
     (no calibration slice -- per the master plan's scope cut)."""

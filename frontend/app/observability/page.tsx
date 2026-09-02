@@ -39,7 +39,7 @@ export default function ObservabilityPage() {
 
       <section className="space-y-4">
         <h2 className="section-heading">Model calibration</h2>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-3">
           <Card className="p-5 sm:p-6">
             <div className="label mb-4 !text-text-muted">Recovery probability model</div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-3">
@@ -67,6 +67,21 @@ export default function ObservabilityPage() {
               Broken-promise detection at the default 0.5 threshold: precision 0.767, recall 0.554. The model
               under-weights promise history for one archetype (frequent promise-breakers) — a known, investigated
               limitation logged in the ML decisions record rather than silently smoothed over.
+            </p>
+          </Card>
+          <Card className="p-5 sm:p-6">
+            <div className="label mb-4 !text-text-muted">Root-cause model (cash-flow stress vs. oversight)</div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <StatRow label="ROC-AUC — Experiment A" value="≈0.757" />
+              <StatRow label="PR-AUC" value="≈0.648" />
+              <StatRow label="Brier score (calibrated)" value="≈0.196" />
+              <StatRow label="Training population" value="Non-disputed only" />
+            </div>
+            <p className="mt-4 text-xs text-text-faint">
+              2-class, not 3-way: dispute is already a reliable, deterministic signal read directly from the invoice
+              (see the Policy Gate), so this model only answers cash-flow stress vs. oversight for invoices that
+              aren&rsquo;t disputed. Archetype-level predicted rates track the generator&rsquo;s own ground-truth
+              weighting closely across all 7 non-disputed archetypes.
             </p>
           </Card>
         </div>

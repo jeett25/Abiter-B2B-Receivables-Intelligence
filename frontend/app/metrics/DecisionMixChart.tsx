@@ -52,6 +52,8 @@ function Donut({ summary }: { summary: EvaluationSummary }) {
                 borderRadius: 10,
                 fontSize: 12,
               }}
+              itemStyle={{ color: "var(--color-text)" }}
+              labelStyle={{ color: "var(--color-text)", fontWeight: 600 }}
               formatter={(value, name) => [`${value} invoices`, name]}
             />
           </PieChart>

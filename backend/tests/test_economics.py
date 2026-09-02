@@ -163,3 +163,52 @@ def test_recommend_action_abstains_when_top_edge_over_wait_is_immaterial():
 def test_materiality_threshold_scales_with_amount_not_just_flat_floor():
     assert materiality_threshold(1_000.0) == 50.0  # flat floor dominates
     assert materiality_threshold(100_000.0) == 1_000.0  # 1% dominates
+
+
+# --- Root-cause context (2026-09-02): a bounded nudge to specific actions'
+# uplift, applied only above ROOT_CAUSE_CONFIDENCE_THRESHOLD -- context for
+# Economics, never a selector. See app/decision/config.py's
+# ROOT_CAUSE_UPLIFT_ADJUSTMENT for the exact deltas.
+
+
+def test_action_uplift_unaffected_when_root_cause_confidence_below_threshold():
+    baseline = action_uplift(ActionType.PAYMENT_LINK, SMALL_AMOUNT)
+    low_confidence = action_uplift(ActionType.PAYMENT_LINK, SMALL_AMOUNT, "cash_flow_stress", 0.55)
+    assert low_confidence == baseline
+
+
+def test_action_uplift_nudged_for_cash_flow_stress_above_threshold():
+    baseline = action_uplift(ActionType.PAYMENT_LINK, SMALL_AMOUNT)
+    nudged = action_uplift(ActionType.PAYMENT_LINK, SMALL_AMOUNT, "cash_flow_stress", 0.8)
+    assert nudged > baseline
+
+
+def test_action_uplift_nudge_is_bounded_small_not_dominant():
+    # The nudge must never be large enough to flip a clearly-dominated
+    # action into the winner on its own -- confirmed here against the
+    # actual gap between PAYMENT_LINK and a clearly stronger candidate.
+    baseline = action_uplift(ActionType.PAYMENT_LINK, SMALL_AMOUNT)
+    nudged = action_uplift(ActionType.PAYMENT_LINK, SMALL_AMOUNT, "cash_flow_stress", 0.99)
+    assert nudged - baseline <= 0.05
+
+
+def test_action_uplift_unaffected_for_actions_with_no_configured_root_cause_adjustment():
+    baseline = action_uplift(ActionType.ESCALATE, SMALL_AMOUNT)
+    with_context = action_uplift(ActionType.ESCALATE, SMALL_AMOUNT, "cash_flow_stress", 0.9)
+    assert with_context == baseline
+
+
+def test_rank_actions_defaults_preserve_prior_behavior_with_no_root_cause_context():
+    with_context_none = rank_actions(base_probability=0.4, amount=60_000.0)
+    explicit_none = rank_actions(base_probability=0.4, amount=60_000.0, root_cause_label=None, root_cause_probability=0.0)
+    assert with_context_none == explicit_none
+
+
+def test_recommend_action_still_authoritative_over_root_cause_context():
+    # Economics + Policy remain the decision authority -- a confident
+    # root-cause context must not bypass the materiality-gated abstention
+    # rule that already sends this case to WAIT.
+    baseline = recommend_action(base_probability=0.95, amount=50_000.0)
+    with_context = recommend_action(base_probability=0.95, amount=50_000.0, root_cause_label="oversight", root_cause_probability=0.9)
+    assert baseline.action_type == ActionType.WAIT
+    assert with_context.action_type == ActionType.WAIT

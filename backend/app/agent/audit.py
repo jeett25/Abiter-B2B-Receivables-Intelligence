@@ -38,6 +38,11 @@ def _build_model_scores(state: dict) -> dict:
     scores = {
         "recovery_probability": state.get("recovery_probability"),
         "ptp_probability": state.get("ptp_probability"),
+        "root_cause": (
+            {"predicted_label": state["root_cause_label"], "confidence": state.get("root_cause_confidence")}
+            if state.get("root_cause_label") is not None
+            else None
+        ),
     }
     if "economics_ranking" in state:
         scores["candidate_actions"] = [_action_ev_to_dict(ev) for ev in state["economics_ranking"]]

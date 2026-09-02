@@ -19,6 +19,7 @@ from app.ml.features import build_live_feature_table, load_raw_tables
 from app.ml.persist import load_model
 from app.ml.train_ptp import calibrated_predict_proba as ptp_calibrated_predict_proba
 from app.ml.train_recovery import calibrated_predict_proba
+from app.ml.train_root_cause import calibrated_predict_proba as root_cause_calibrated_predict_proba
 from app.models.enums import ActionType
 from app.retrieval.hybrid_search import RetrievedCase, build_query_text, hybrid_retrieve
 DEFAULT_AS_OF = datetime(2026, 8, 27, 12, 0, tzinfo=IST)
@@ -27,6 +28,8 @@ RETRIEVAL_TOP_K = 5
 
 _recovery_model = None
 _recovery_calibrator = None
+_root_cause_model = None
+_root_cause_calibrator = None
 
 
 def _get_recovery_model():
@@ -83,6 +86,38 @@ def score_ptp_probability(feature_row: pd.Series) -> float:
     return float(proba[0])
 
 
+def _get_root_cause_model():
+    global _root_cause_model
+    if _root_cause_model is None:
+        _root_cause_model = load_model("root_cause_model")
+    return _root_cause_model
+
+
+def _get_root_cause_calibrator():
+    global _root_cause_calibrator
+    if _root_cause_calibrator is None:
+        _root_cause_calibrator = load_model("root_cause_calibrator")
+    return _root_cause_calibrator
+
+
+def predict_root_cause(feature_row: pd.Series) -> tuple[str, float]:
+    """Returns (predicted_label, confidence) where confidence is P(the
+    predicted label) -- i.e. P(cash_flow_stress) if that's the predicted
+    side of 0.5, else P(oversight) = 1 - P(cash_flow_stress). This is the
+    quantity economics.py's ROOT_CAUSE_CONFIDENCE_THRESHOLD gates on ("how
+    sure is the model", not "which way did it lean"). Only meaningful for
+    non-disputed invoices -- the model was trained exclusively on
+    non-disputed historical rows (see app/ml/train_root_cause.py); callers
+    must gate on `not is_disputed` before calling this, same as
+    build_root_cause_table() gates training."""
+    df = pd.DataFrame([feature_row])
+    proba = root_cause_calibrated_predict_proba(_get_root_cause_model(), _get_root_cause_calibrator(), df)
+    p_cash_flow_stress = float(proba[0])
+    if p_cash_flow_stress >= 0.5:
+        return "cash_flow_stress", p_cash_flow_stress
+    return "oversight", 1.0 - p_cash_flow_stress
+
+
 @dataclass(frozen=True)
 class Decision:
     invoice_id: object
@@ -95,6 +130,8 @@ class Decision:
     retrieved_cases: list[RetrievedCase]
     policy_verdict: PolicyVerdict
     final_action: ActionType
+    root_cause_label: str | None = None
+    root_cause_confidence: float | None = None
 
 
 def _to_naive(ts) -> pd.Timestamp:
@@ -148,9 +185,17 @@ def decide_from_feature_row(feature_row: pd.Series, tables: dict, as_of: datetim
         top_k=RETRIEVAL_TOP_K,
     )
 
-    ranking = rank_actions(base_probability, amount, prior_contact_count=prior_contact_count, is_disputed=is_disputed)
+    root_cause_label, root_cause_confidence = (None, None)
+    if not is_disputed:
+        root_cause_label, root_cause_confidence = predict_root_cause(feature_row)
+
+    ranking = rank_actions(
+        base_probability, amount, prior_contact_count=prior_contact_count, is_disputed=is_disputed,
+        root_cause_label=root_cause_label, root_cause_probability=root_cause_confidence or 0.0,
+    )
     proposed = recommend_action(
-        base_probability, amount, prior_contact_count=prior_contact_count, is_disputed=is_disputed
+        base_probability, amount, prior_contact_count=prior_contact_count, is_disputed=is_disputed,
+        root_cause_label=root_cause_label, root_cause_probability=root_cause_confidence or 0.0,
     )
 
     context = PolicyContext(
@@ -176,6 +221,8 @@ def decide_from_feature_row(feature_row: pd.Series, tables: dict, as_of: datetim
         retrieved_cases=retrieved_cases,
         policy_verdict=verdict,
         final_action=verdict.final_action,
+        root_cause_label=root_cause_label,
+        root_cause_confidence=root_cause_confidence,
     )
 
 

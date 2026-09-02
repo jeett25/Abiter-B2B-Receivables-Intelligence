@@ -43,6 +43,7 @@ export default function ComparisonChart({ baseline, engine }: { baseline: Evalua
                 fontSize: 12,
               }}
               labelStyle={{ color: "var(--color-text)", marginBottom: 4, fontWeight: 600 }}
+              itemStyle={{ color: "var(--color-text)" }}
               formatter={(value) => formatCurrency(Number(value))}
             />
             <Legend wrapperStyle={{ fontSize: 12, paddingTop: 10 }} iconType="circle" iconSize={8} />

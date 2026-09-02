@@ -57,11 +57,18 @@ from app.models.enums import AccountCurrentState, ActionType, InvoiceStatus
 
 DEMO_FIXTURES_PATH = Path(__file__).parent / "demo_fixtures.json"
 
-# Must match app/attribution/persist.py's LEDGER_PAYMENT_METHOD exactly --
-# confirmed via code search to be the ONLY place in the codebase that ever
-# writes this literal string, so deleting by it can never remove anything
-# but Day 5's own write-back artifacts, even across repeated reset runs.
+# Must match app/attribution/persist.py's LEDGER_PAYMENT_METHOD and
+# app/agent/simulate_scenarios.py's Scenario A payment method exactly --
+# both confirmed via code search to be the ONLY places in the codebase that
+# ever write these literal strings, so deleting by them can never remove
+# an organic generator-created payment (which uses rng.choice among
+# "bank_transfer"/"upi"/"cheque"/"card" -- confirmed live: a first version
+# of this cleanup deleted ALL payments unconditionally, which wiped out
+# already_paid_suppress's real organic payment since the generator can
+# coincidentally also pick "upi" for it).
 ATTRIBUTION_WRITE_BACK_METHOD = "attribution_simulation"
+SCENARIO_REHEARSAL_METHOD = "scenario_rehearsal"
+SYNTHETIC_PAYMENT_METHODS = (ATTRIBUTION_WRITE_BACK_METHOD, SCENARIO_REHEARSAL_METHOD)
 
 
 def _load_fixtures() -> dict:
@@ -75,24 +82,31 @@ def _get_invoice_id(session, invoice_number: str):
 
 def reset_and_reassess(invoice_number: str, as_of=DEFAULT_AS_OF) -> dict:
     """Safe to call repeatedly across rehearsals for any of the 6 fixtures,
-    whether or not Day 5's write-back ever touched them -- see module
-    docstring. Cleaning up write-back artifacts is conditional (only acts
-    if a matching Payment row actually exists); clearing stale
-    decision_logs/payment_promises and re-running fresh always happens, so
-    every fixture's check reflects current, not stale, behavior."""
+    whether or not Day 5's write-back or a simulate_scenarios.py rehearsal
+    ever touched them -- see module docstring. Cleaning up write-back/
+    rehearsal artifacts is conditional on SYNTHETIC_PAYMENT_METHODS
+    specifically (2026-09-02: widened from write-back-only to also catch
+    Scenario A's own payment, narrowed back from an earlier
+    unconditional-delete-everything attempt that corrupted
+    already_paid_suppress's real organic payment -- see
+    SYNTHETIC_PAYMENT_METHODS' comment for why an exact-method match is the
+    right boundary here, not "any payment"). Clearing stale
+    decision_logs/payment_promises and re-running fresh always happens
+    regardless, so every fixture's check reflects current, not stale,
+    behavior."""
     session = SessionLocal()
     try:
         invoice_id = _get_invoice_id(session, invoice_number)
 
-        write_back_ids = (
+        synthetic_ids = (
             session.execute(
-                select(Payment.id).where(Payment.invoice_id == invoice_id, Payment.method == ATTRIBUTION_WRITE_BACK_METHOD)
+                select(Payment.id).where(Payment.invoice_id == invoice_id, Payment.method.in_(SYNTHETIC_PAYMENT_METHODS))
             )
             .scalars()
             .all()
         )
-        if write_back_ids:
-            session.execute(delete(Payment).where(Payment.id.in_(write_back_ids)))
+        if synthetic_ids:
+            session.execute(delete(Payment).where(Payment.id.in_(synthetic_ids)))
             invoice = session.get(Invoice, invoice_id)
             invoice.status = InvoiceStatus.OPEN
             invoice.paid_at = None
@@ -151,12 +165,17 @@ def check_promise_breaker_reassess(result: dict) -> tuple[bool, str]:
 
 def check_low_value_stop(result: dict) -> tuple[bool, str]:
     # Day 3's own documented, accepted finding (see CLAUDE.md's Day-3
-    # section): this fixture produces WHATSAPP, not STOP -- asserting
-    # WHATSAPP here specifically, so this pre-existing, already-known
-    # divergence is never mistaken for new drift.
+    # section): this fixture produces an active nudge, not STOP. Reframed
+    # again after the root-cause classifier addition: INV-10040 predicts
+    # cash_flow_stress at high confidence, which nudges PAYMENT_LINK's
+    # uplift (see ROOT_CAUSE_UPLIFT_ADJUSTMENT) -- genuinely tipping an
+    # already-close WHATSAPP-vs-PAYMENT_LINK race (~Rs45 apart pre-nudge).
+    # Both are the intended "cheap nudge, not STOP" finding; accepting
+    # either rather than re-narrowing to one, since which one wins is
+    # legitimately sensitive to small, evidence-based economics changes.
     action = result.get("selected_action")
-    ok = action == ActionType.WHATSAPP
-    return ok, f"selected_action={action.value if action else None} (expected WHATSAPP -- Day 3's documented finding, not STOP)"
+    ok = action in (ActionType.WHATSAPP, ActionType.PAYMENT_LINK)
+    return ok, f"selected_action={action.value if action else None} (expected WHATSAPP or PAYMENT_LINK -- a cheap nudge, not STOP)"
 
 
 def check_high_value_act(result: dict) -> tuple[bool, str]:

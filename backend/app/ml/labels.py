@@ -38,6 +38,20 @@ def eventually_paid(row) -> int:
     return int(row["status"] == InvoiceStatus.PAID.value)
 
 
+def root_cause_label(row) -> int:
+    """Training target for the root-cause classifier: 1 = cash_flow_stress,
+    0 = oversight. Deliberately 2-class, not 3-class -- 'dispute' is already
+    a reliably observable business fact the Policy Gate reads directly via
+    detect_dispute() (see app/decision/policy.py), so asking a model to
+    re-predict it would be redundant and strictly less trustworthy than the
+    ground-truth passthrough already in production. This label (and the
+    table it's built from) is restricted to non-disputed rows only --
+    build_root_cause_table() in train_root_cause.py filters those out before
+    this ever runs, so 'dispute' should never reach this function."""
+    assert row["true_root_cause"] != "dispute", "root_cause_label called on a disputed row"
+    return int(row["true_root_cause"] == "cash_flow_stress")
+
+
 def _curve_for_group(df: pd.DataFrame) -> dict:
     n = len(df)
     if n == 0:

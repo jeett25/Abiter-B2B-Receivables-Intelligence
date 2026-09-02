@@ -118,13 +118,22 @@ if __name__ == "__main__":
     from app.ml.train_recovery import (
         train_xgb_classifier as train_recovery_model,
     )
+    from app.ml.train_root_cause import (
+        build_root_cause_table,
+        calibrate_model as calibrate_root_cause,
+    )
+    from app.ml.train_root_cause import (
+        train_xgb_classifier as train_root_cause_model,
+    )
     from app.ml.evaluate import classification_metrics
-    from app.ml.splits import split_ptp_table, split_recovery_table
+    from app.ml.splits import split_ptp_table, split_recovery_table, split_root_cause_table
     from app.ml import train_recovery as recovery_module
     from app.ml import train_ptp as ptp_module
+    from app.ml import train_root_cause as root_cause_module
 
     RECOVERY_MODEL_VERSION = "recovery_xgb_isotonic_v1"
     PTP_MODEL_VERSION = "ptp_xgb_platt_v1"
+    ROOT_CAUSE_MODEL_VERSION = "root_cause_xgb_isotonic_v1"
 
     print("Training + persisting recovery model...")
     recovery_table = load_labeled_recovery_table()
@@ -160,4 +169,21 @@ if __name__ == "__main__":
     n_written = write_feature_snapshots(ptp_table, PTP_MODEL_VERSION, timestamp_col="T")
     print(f"  wrote {n_written} FeatureSnapshot rows (model_version={PTP_MODEL_VERSION})")
 
-    print(f"\nSpot-check in pgAdmin: SELECT * FROM feature_snapshots WHERE model_version IN ('{RECOVERY_MODEL_VERSION}', '{PTP_MODEL_VERSION}') LIMIT 10;")
+    print("\nTraining + persisting root-cause model...")
+    root_cause_table = build_root_cause_table()
+    root_cause_splits = split_root_cause_table(root_cause_table)
+    root_cause_model = train_root_cause_model(root_cause_splits["fit"], root_cause_splits["validation"])
+    root_cause_calibrator = calibrate_root_cause(root_cause_model, root_cause_splits["calibration"])
+
+    root_cause_proba = root_cause_module.calibrated_predict_proba(root_cause_model, root_cause_calibrator, root_cause_splits["test"])
+    root_cause_metrics = classification_metrics(root_cause_splits["test"][root_cause_module.LABEL_COLUMN], root_cause_proba)
+
+    model_path = save_model(root_cause_model, "root_cause_model")
+    calibrator_path = save_model(root_cause_calibrator, "root_cause_calibrator")
+    metrics_path = save_metrics(root_cause_metrics, "root_cause")
+    print(f"  saved: {model_path}, {calibrator_path}, {metrics_path}")
+
+    n_written = write_feature_snapshots(root_cause_table, ROOT_CAUSE_MODEL_VERSION, timestamp_col="due_date")
+    print(f"  wrote {n_written} FeatureSnapshot rows (model_version={ROOT_CAUSE_MODEL_VERSION})")
+
+    print(f"\nSpot-check in pgAdmin: SELECT * FROM feature_snapshots WHERE model_version IN ('{RECOVERY_MODEL_VERSION}', '{PTP_MODEL_VERSION}', '{ROOT_CAUSE_MODEL_VERSION}') LIMIT 10;")

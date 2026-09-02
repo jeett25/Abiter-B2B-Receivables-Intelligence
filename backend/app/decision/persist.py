@@ -101,6 +101,11 @@ def build_decision_log(decision: Decision, as_of: datetime) -> DecisionLog:
     model_scores = {
         "recovery_probability": decision.base_probability,
         "candidate_actions": [_action_ev_to_dict(ev) for ev in decision.economics_ranking],
+        "root_cause": (
+            {"predicted_label": decision.root_cause_label, "confidence": decision.root_cause_confidence}
+            if decision.root_cause_label is not None
+            else None
+        ),
     }
     evidence = {"retrieved_cases": [_retrieved_case_to_dict(c) for c in decision.retrieved_cases]}
     policy_checks = {

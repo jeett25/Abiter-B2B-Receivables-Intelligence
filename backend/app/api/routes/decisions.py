@@ -27,12 +27,16 @@ def get_decision(invoice_id: UUID, db: Annotated[Session, Depends(get_db)]):
 
     # Most recent row -- decision_logs is append-only with no dedup (see
     # app/agent/DECISIONS.md's Idempotency entry), so more than one row can
-    # exist for an invoice if it was ever reprocessed.
+    # exist for an invoice if it was ever reprocessed. `timestamp` alone
+    # can't break ties (every invoice in the same batch run shares the same
+    # business timestamp) -- `created_at` (real wall-clock insert time,
+    # added 2026-09-02) is the real tiebreaker; ordering by timestamp first
+    # still matters for a genuinely different `as_of` re-run.
     log = (
         db.execute(
             select(DecisionLog)
             .where(DecisionLog.invoice_id == invoice_id)
-            .order_by(DecisionLog.timestamp.desc())
+            .order_by(DecisionLog.timestamp.desc(), DecisionLog.created_at.desc())
             .limit(1)
         )
         .scalars()
@@ -62,7 +66,11 @@ def get_timeline(invoice_id: UUID, db: Annotated[Session, Depends(get_db)]):
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     logs = (
-        db.execute(select(DecisionLog).where(DecisionLog.invoice_id == invoice_id).order_by(DecisionLog.timestamp))
+        db.execute(
+            select(DecisionLog)
+            .where(DecisionLog.invoice_id == invoice_id)
+            .order_by(DecisionLog.timestamp, DecisionLog.created_at)
+        )
         .scalars()
         .all()
     )

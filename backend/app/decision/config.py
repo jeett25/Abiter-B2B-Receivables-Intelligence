@@ -49,3 +49,23 @@ MATERIALITY_FRACTION_OF_AMOUNT = 0.01
 # both directions).
 ESCALATE_LARGE_AMOUNT_THRESHOLD_INR = 100_000.0
 ESCALATE_LARGE_AMOUNT_UPLIFT = 0.02
+
+# Root-cause-conditioned uplift nudge (app/ml/train_root_cause.py's
+# cash_flow_stress-vs-oversight classifier, non-disputed invoices only).
+# Deliberately small and additive, and only applied when the model's own
+# confidence clears ROOT_CAUSE_CONFIDENCE_THRESHOLD -- this is context for
+# Economics, not an action selector: it's sized to tip a genuinely close EV
+# comparison, never large enough on its own to make a clearly-dominated
+# action win. Economics + the Policy Gate remain the sole decision
+# authority; root cause only perturbs one input to Economics.
+ROOT_CAUSE_CONFIDENCE_THRESHOLD = 0.6
+
+ROOT_CAUSE_UPLIFT_ADJUSTMENT: dict[str, dict[ActionType, float]] = {
+    "cash_flow_stress": {
+        ActionType.PAYMENT_LINK: 0.03,  # can't pay without friction removed -- favor a direct payment link
+    },
+    "oversight": {
+        ActionType.EMAIL: 0.02,  # just forgot -- a cheap reminder is probably enough
+        ActionType.WHATSAPP: 0.02,
+    },
+}

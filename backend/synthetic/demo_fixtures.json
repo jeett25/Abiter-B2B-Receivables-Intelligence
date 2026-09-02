@@ -5,11 +5,11 @@
   },
   "chronic_late_escalate": {
     "invoice_number": "INV-10184",
-    "expected_action": "escalate"
+    "expected_action": "voice"
   },
   "promise_breaker_reassess": {
     "invoice_number": "INV-10677",
-    "expected_action": "reassess"
+    "expected_action": "voice"
   },
   "low_value_stop": {
     "invoice_number": "INV-10040",

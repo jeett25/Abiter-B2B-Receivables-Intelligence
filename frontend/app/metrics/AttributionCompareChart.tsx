@@ -43,6 +43,8 @@ function MiniBarPanel({
                 borderRadius: 10,
                 fontSize: 12,
               }}
+              itemStyle={{ color: "var(--color-text)" }}
+              labelStyle={{ color: "var(--color-text)", fontWeight: 600 }}
               formatter={(value) => tooltipFormatter(Number(value))}
             />
             <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={36}>

@@ -109,7 +109,22 @@ def scenario_a_successful() -> None:
     ledger_payment_date = min(DAY10.date(), DEFAULT_AS_OF.date() - timedelta(days=1))
     session = SessionLocal()
     try:
-        session.add(Payment(invoice_id=invoice_id, amount=Decimal(str(invoice.amount)), payment_date=ledger_payment_date, method="upi"))
+        # method is a distinct marker ("scenario_rehearsal"), not a random
+        # "upi"/"bank_transfer" like the generator's own organic payments --
+        # synthetic/seed_demo.py's reset_and_reassess() relies on this exact
+        # string to clean up ONLY this rehearsal's own payment on a rerun,
+        # never an organic one (confirmed live: a plain method="upi" here
+        # was indistinguishable from the generator's own random choice of
+        # "upi" for other fixtures, corrupting already_paid_suppress's real
+        # organic payment on cleanup).
+        session.add(
+            Payment(
+                invoice_id=invoice_id,
+                amount=Decimal(str(invoice.amount)),
+                payment_date=ledger_payment_date,
+                method="scenario_rehearsal",
+            )
+        )
         session.commit()
     finally:
         session.close()

@@ -19,7 +19,7 @@ from app.agent.tools import create_payment_link, execute_email, execute_voice, e
 from app.core.db import SessionLocal
 from app.decision.economics import rank_actions, recommend_action
 from app.decision.policy import PolicyContext, detect_already_paid, detect_dispute, evaluate_policy
-from app.decision.service import RETRIEVAL_TOP_K, score_ptp_probability, score_recovery_probability
+from app.decision.service import RETRIEVAL_TOP_K, predict_root_cause, score_ptp_probability, score_recovery_probability
 from app.ml.features import build_live_feature_table, build_live_ptp_feature_row, load_raw_tables
 from app.models import AccountState, PaymentPromise
 from app.models.enums import ActionType, PromiseStatus
@@ -201,8 +201,25 @@ def build_features(state: GraphState, config: RunnableConfig) -> dict:
 
 
 def score_ml(state: GraphState) -> dict:
+    """Root Cause -> Recovery Probability, per the pipeline order: root
+    cause is computed first (context for ECONOMICS), then recovery
+    probability. Root cause is only ever computed for non-disputed
+    invoices -- app/ml/train_root_cause.py's model was trained exclusively
+    on non-disputed rows (see its module docstring), so calling it on a
+    disputed one would be invalid input, not just redundant with
+    detect_dispute()'s already-reliable dispute signal."""
     feature_row = pd.Series(state["features"])
-    return {"recovery_probability": score_recovery_probability(feature_row), "ptp_probability": None}
+
+    root_cause_label, root_cause_confidence = (None, None)
+    if not state["is_disputed"]:
+        root_cause_label, root_cause_confidence = predict_root_cause(feature_row)
+
+    return {
+        "root_cause_label": root_cause_label,
+        "root_cause_confidence": root_cause_confidence,
+        "recovery_probability": score_recovery_probability(feature_row),
+        "ptp_probability": None,
+    }
 
 
 def retrieve_cases(state: GraphState) -> dict:
@@ -232,13 +249,17 @@ def retrieve_cases(state: GraphState) -> dict:
 
 def run_economics(state: GraphState) -> dict:
     amount = float(state["features"]["amount"])
+    root_cause_label = state.get("root_cause_label")
+    root_cause_confidence = state.get("root_cause_confidence") or 0.0
     ranking = rank_actions(
         state["recovery_probability"], amount,
         prior_contact_count=state["prior_contact_count"], is_disputed=state["is_disputed"],
+        root_cause_label=root_cause_label, root_cause_probability=root_cause_confidence,
     )
     proposed = recommend_action(
         state["recovery_probability"], amount,
         prior_contact_count=state["prior_contact_count"], is_disputed=state["is_disputed"],
+        root_cause_label=root_cause_label, root_cause_probability=root_cause_confidence,
     )
     return {
         "candidate_actions": [ev.action_type for ev in ranking],

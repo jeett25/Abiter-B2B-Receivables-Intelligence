@@ -44,6 +44,8 @@ export default function SliceLiftChart({ title, data }: { title: string; data: {
                 borderRadius: 10,
                 fontSize: 12,
               }}
+              itemStyle={{ color: "var(--color-text)" }}
+              labelStyle={{ color: "var(--color-text)", fontWeight: 600 }}
               formatter={(value, _name, item) => [formatCurrency(Number(value)), `n=${item.payload.n} per arm`]}
             />
             <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={22}>
