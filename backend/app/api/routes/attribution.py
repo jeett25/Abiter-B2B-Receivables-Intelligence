@@ -37,6 +37,8 @@ def _to_slice_out(r: AttributionExperimentResult) -> AttributionSliceOut:
         treatment_friction=float(r.treatment_friction),
         incremental_net_recovery=float(r.incremental_net_recovery),
         recovery_rate_diff_z=r.recovery_rate_diff_z,
+        treatment_count_recovery_rate=r.treatment_count_recovery_rate,
+        control_count_recovery_rate=r.control_count_recovery_rate,
     )
 
 

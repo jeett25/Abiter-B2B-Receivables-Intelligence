@@ -77,6 +77,8 @@ def get_metrics(db: Annotated[Session, Depends(get_db)]):
             treatment_cost=float(pooled.treatment_cost),
             treatment_friction=float(pooled.treatment_friction),
             incremental_net_recovery=float(pooled.incremental_net_recovery),
+            treatment_count_recovery_rate=pooled.treatment_count_recovery_rate,
+            control_count_recovery_rate=pooled.control_count_recovery_rate,
         )
 
     return MetricsResponse(

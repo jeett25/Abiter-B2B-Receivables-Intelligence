@@ -199,17 +199,25 @@ export function StatTile({
 // from StatTile above (no icon, tighter): use IconStat when a lucide icon
 // adds real scannability to a row of several tiles, StatTile for a plain
 // label/value pair elsewhere.
-const ICON_STAT_ICON_TONE: Record<"accent" | "success" | "neutral", string> = {
+type IconStatTone = "accent" | "success" | "danger" | "neutral";
+
+const ICON_STAT_ICON_TONE: Record<IconStatTone, string> = {
   accent: "bg-accent-soft text-accent-text",
   success: "bg-status-success-soft text-status-success",
+  danger: "bg-status-danger-soft text-status-danger",
   neutral: "bg-surface-2 text-text-muted",
 };
-const ICON_STAT_VALUE_TONE: Record<"accent" | "success" | "neutral", string> = {
+const ICON_STAT_VALUE_TONE: Record<IconStatTone, string> = {
   accent: "text-accent-text",
   success: "text-status-success",
+  danger: "text-status-danger",
   neutral: "text-text",
 };
 
+// tone should reflect the VALUE's actual sign/meaning, never hardcoded --
+// a metric that can legitimately go negative (e.g. incremental recovery)
+// must compute its tone from the number, not assume "success" because the
+// tile usually looks good. See signTone() below for the common case.
 export function IconStat({
   icon: Icon,
   label,
@@ -221,7 +229,7 @@ export function IconStat({
   label: string;
   value: string;
   sub?: string;
-  tone?: "accent" | "success" | "neutral";
+  tone?: IconStatTone;
 }) {
   return (
     <Card className="p-4 sm:p-5">
@@ -235,6 +243,10 @@ export function IconStat({
       {sub && <div className="mt-1 text-xs text-text-faint">{sub}</div>}
     </Card>
   );
+}
+
+export function signTone(value: number): "success" | "danger" {
+  return value >= 0 ? "success" : "danger";
 }
 
 export function PageHeader({

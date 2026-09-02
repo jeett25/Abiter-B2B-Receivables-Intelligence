@@ -1,7 +1,7 @@
 import { Layers, ShieldCheck, Target, TrendingUp } from "lucide-react";
 import { ApiError, getAttribution, getMetrics } from "@/lib/api";
 import { ActionType, AttributionResponse, MetricsResponse } from "@/lib/types";
-import { Card, ErrorPanel, IconStat, PageHeader, actionMeta, formatCurrency, formatPercent } from "@/lib/ui";
+import { Card, ErrorPanel, IconStat, PageHeader, actionMeta, formatCurrency, formatPercent, signTone } from "@/lib/ui";
 import RefreshButton from "../RefreshButton";
 import AttributionCompareChart from "./AttributionCompareChart";
 import ComparisonChart from "./ComparisonChart";
@@ -37,15 +37,28 @@ export default async function MetricsPage() {
 
   const byAction = attribution.slices.filter((s) => s.segment === null && s.action !== null);
   const bySegment = attribution.slices.filter((s) => s.segment !== null && s.action === null);
+  const pooledSlice = attribution.slices.find((s) => s.segment === null && s.action === null);
 
   const actionLiftData = byAction.map((r) => ({
     label: actionMeta(r.action as ActionType).label,
     value: r.incremental_net_recovery,
+    n: Math.min(r.treatment_n, r.control_n),
   }));
   const segmentLiftData = bySegment.map((r) => ({
     label: r.segment as string,
     value: r.incremental_net_recovery,
+    n: Math.min(r.treatment_n, r.control_n),
   }));
+
+  // COUNT-based incremental (fraction of invoices recovered) -- the metric
+  // recovery_rate_diff_z is actually computed on, distinct from the
+  // amount-weighted incremental_recovery_rate above it. Null whenever
+  // either arm lacks the field (e.g. before a fresh attribution run).
+  const countIncremental =
+    metrics.attribution?.treatment_count_recovery_rate != null && metrics.attribution?.control_count_recovery_rate != null
+      ? metrics.attribution.treatment_count_recovery_rate - metrics.attribution.control_count_recovery_rate
+      : null;
+  const pooledZ = pooledSlice?.recovery_rate_diff_z ?? null;
 
   return (
     <div className="space-y-10">
@@ -135,11 +148,56 @@ export default async function MetricsPage() {
           </Card>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <IconStat icon={Target} label="Treatment recovery" value={formatPercent(metrics.attribution.treatment_recovery_rate)} tone="neutral" />
-              <IconStat icon={Target} label="Control recovery" value={formatPercent(metrics.attribution.control_recovery_rate)} tone="neutral" />
-              <IconStat icon={TrendingUp} label="Incremental recovery" value={formatPercent(metrics.attribution.incremental_recovery_rate)} tone="success" />
-              <IconStat icon={TrendingUp} label="Incremental net recovery" value={formatCurrency(metrics.attribution.incremental_net_recovery)} tone="accent" />
+            <div className="space-y-5">
+              <div>
+                <div className="label mb-2.5 !text-text-faint">By recovered amount (₹-weighted)</div>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  <IconStat icon={Target} label="Treatment recovery" value={formatPercent(metrics.attribution.treatment_recovery_rate)} tone="neutral" />
+                  <IconStat icon={Target} label="Control recovery" value={formatPercent(metrics.attribution.control_recovery_rate)} tone="neutral" />
+                  <IconStat
+                    icon={TrendingUp}
+                    label="Incremental recovery"
+                    value={formatPercent(metrics.attribution.incremental_recovery_rate)}
+                    tone={signTone(metrics.attribution.incremental_recovery_rate)}
+                    sub="no valid significance test at this sample size -- a handful of large invoices can swing this"
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="label mb-2.5 !text-text-faint">By invoice count (statistically tested)</div>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  <IconStat
+                    icon={Target}
+                    label="Treatment recovery"
+                    value={metrics.attribution.treatment_count_recovery_rate != null ? formatPercent(metrics.attribution.treatment_count_recovery_rate) : "n/a"}
+                    tone="neutral"
+                  />
+                  <IconStat
+                    icon={Target}
+                    label="Control recovery"
+                    value={metrics.attribution.control_count_recovery_rate != null ? formatPercent(metrics.attribution.control_count_recovery_rate) : "n/a"}
+                    tone="neutral"
+                  />
+                  <IconStat
+                    icon={TrendingUp}
+                    label="Incremental recovery"
+                    value={countIncremental !== null ? formatPercent(countIncremental) : "n/a"}
+                    tone={countIncremental !== null ? signTone(countIncremental) : "neutral"}
+                    sub={
+                      pooledZ !== null
+                        ? `z = ${pooledZ.toFixed(2)} — ${Math.abs(pooledZ) >= 1.96 ? "significant at 95% confidence" : "not statistically significant yet"}`
+                        : undefined
+                    }
+                  />
+                </div>
+              </div>
+              <IconStat
+                icon={TrendingUp}
+                label="Incremental net recovery (₹)"
+                value={formatCurrency(metrics.attribution.incremental_net_recovery)}
+                tone={signTone(metrics.attribution.incremental_net_recovery)}
+                sub="cost- and friction-adjusted"
+              />
             </div>
             <AttributionCompareChart headline={metrics.attribution} />
           </>

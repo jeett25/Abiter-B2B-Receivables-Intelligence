@@ -831,6 +831,69 @@ happen in the request path (`app/api/DECISIONS.md`) -- so the Mac's backend
 with zero need to retrain or re-persist anything. Artifacts only matter if
 actively re-running training/decision/agent scripts on the Mac itself.
 
+## Attribution metric honesty fixes (2026-09-02, after the "frontend done" commit)
+
+Investigated the pooled attribution experiment's negative headline (~-3%)
+properly, at the user's request, rather than tuning anything until it looked
+better -- queried `attribution_experiment_results` directly instead of
+trusting stale example numbers. Found a genuinely important thing: **the
+amount-weighted and count-based recovery rates disagree in SIGN on the exact
+same 811-invoice population** -- amount-weighted: treatment 33.2% vs. control
+36.3% (-3.1pp); count-based (fraction of invoices recovered): treatment 62.2%
+vs. control 60.1% (+2.1pp). `app/attribution/DECISIONS.md` already documents
+that `recovery_rate_diff_z` is built on the COUNT-based rate specifically
+("the natural quantity for a binomial variance"), but the API never actually
+exposed that rate -- the dashboard could only ever show the noisier,
+untested metric. Every z-score across all 20 slices (pooled + 3 segments + 4
+actions + combinations) is under 1.5 -- nothing here is statistically
+distinguishable from zero at this sample size, especially the small cells
+(Mid-Market x ESCALATE is 7 treatment invoices).
+
+**Three real fixes made, all frontend/API, no economics/data changed:**
+1. **`lib/ui.tsx`**: `IconStat` had no way to render red -- the metrics
+   page's "Incremental recovery"/"Incremental net recovery" tiles hardcoded
+   `tone="success"`/`"accent"` regardless of the actual number's sign. Added
+   a `danger` tone plus a `signTone(value)` helper; every incremental figure
+   on the page now colors itself from its real sign.
+2. **`app/api/schemas.py` + both `routes/attribution.py`/`routes/metrics.py`**:
+   added `treatment_count_recovery_rate`/`control_count_recovery_rate`
+   (nullable, already-existing DB columns, just never wired through) to
+   `AttributionHeadline` and `AttributionSliceOut`. `frontend/app/metrics/page.tsx`
+   now shows both metrics side by side ("By recovered amount (₹-weighted)"
+   vs. "By invoice count (statistically tested)"), with the z-score/plain-
+   language significance note attached to the one it's actually valid for.
+   `AttributionCompareChart.tsx` gained a third mini bar-chart panel for the
+   count-based comparison.
+3. **`SliceLiftChart.tsx`/`SliceTable.tsx`**: any action/segment slice with
+   fewer than 15 invoices per arm now renders at reduced opacity with an
+   explanatory caption, so a 7-invoice cell doesn't visually compete with a
+   200-invoice one.
+
+**A pre-existing, unrelated test failure found while verifying these
+fixes**: `tests/test_api_attribution.py::test_get_attribution_with_diagnostics_includes_archetype_breakdown_and_warnings`
+fails on `assert "consistency_warnings" in body` -- confirmed via `git
+stash` (ran the same test against the pre-fix code) that this predates
+today's changes entirely, not something introduced here. Working theory,
+not yet verified: the Day-5/6 ESCALATE-composition fix may have genuinely
+eliminated the aggregation inconsistency `check_aggregation_consistency`
+used to catch, making the test's assumption ("a warning always fires")
+stale rather than the check itself being broken. **Not fixed yet** -- left
+for a future session, see the handoff prompt already given to the user.
+
+**CUPED variance reduction** (using the Day-2 recovery model's pre-treatment
+calibrated probability as a covariate -- `X = probability` for the count
+metric, `X = probability x amount` for the amount-weighted one) was
+discussed and scoped as a legitimate follow-up, explicitly NOT to make the
+negative number positive but to reduce the real chance-imbalance noise the
+two-metrics-disagreeing-in-sign finding above points to. Not built yet --
+the agreed plan is a cheap feasibility check first (compute `Corr(X,Y)` and
+raw-vs-CUPED SE for both metrics) before committing to the full
+implementation, since a small correlation isn't worth ~2h of work. If
+built: keep raw and CUPED-adjusted estimates both (never replace), log a
+"not used to select a preferred sign" rule in `app/attribution/DECISIONS.md`,
+and add tests for unbiasedness, the covariate being genuinely pre-treatment,
+and variance actually dropping.
+
 ## What's next (for future-session context)
 
 Days 1–5 are all done (see their sections above). **Day 6, subtasks 1–15 of

@@ -189,6 +189,12 @@ export interface AttributionHeadline {
   treatment_cost: number;
   treatment_friction: number;
   incremental_net_recovery: number;
+  // COUNT-based (fraction of invoices recovered) -- distinct from the
+  // amount-weighted rates above, and the metric the z-score is actually
+  // computed on (app/attribution/DECISIONS.md). Null only if the backend
+  // hasn't recomputed this slice since this field was added.
+  treatment_count_recovery_rate: number | null;
+  control_count_recovery_rate: number | null;
 }
 
 // app/api/schemas.py::MetricsResponse
@@ -220,6 +226,9 @@ export interface AttributionSliceOut {
   treatment_friction: number;
   incremental_net_recovery: number;
   recovery_rate_diff_z: number | null;
+  // Same count-vs-amount-weighted split as AttributionHeadline above.
+  treatment_count_recovery_rate: number | null;
+  control_count_recovery_rate: number | null;
 }
 
 // app/api/schemas.py::ArchetypeDiagnosticRow -- hidden-ground-truth

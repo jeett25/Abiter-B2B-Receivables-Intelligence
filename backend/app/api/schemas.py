@@ -82,6 +82,15 @@ class AttributionHeadline(BaseModel):
     treatment_cost: float
     treatment_friction: float
     incremental_net_recovery: float
+    # COUNT-based (fraction of invoices recovered), distinct from the
+    # amount-weighted rates above -- this is the metric recovery_rate_diff_z
+    # is actually computed on (see app/attribution/DECISIONS.md: "built on
+    # the COUNT-based rate, never the amount-weighted one"). The
+    # amount-weighted rate has no valid standard error at this sample size;
+    # exposing this lets the frontend show the number its own significance
+    # test is actually about, instead of only the noisier one.
+    treatment_count_recovery_rate: float | None = None
+    control_count_recovery_rate: float | None = None
 
 
 class MetricsResponse(BaseModel):
@@ -108,6 +117,9 @@ class AttributionSliceOut(BaseModel):
     treatment_friction: float
     incremental_net_recovery: float
     recovery_rate_diff_z: float | None
+    # See AttributionHeadline above -- same count-vs-amount-weighted split.
+    treatment_count_recovery_rate: float | None = None
+    control_count_recovery_rate: float | None = None
 
 
 class ArchetypeDiagnosticRow(BaseModel):
