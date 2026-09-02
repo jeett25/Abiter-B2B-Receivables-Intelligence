@@ -1,14 +1,19 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Search, X } from "lucide-react";
 import { AccountCurrentState } from "@/lib/types";
 import { cx } from "@/lib/ui";
 
-// Client component (needs onChange) so picking a Status auto-applies
-// immediately -- no click required. The Filter button stays for the
-// Segment/Invoice # text inputs (and as a fallback/explicit submit for
-// Status too). Both paths funnel through the same navigate() so they can
-// never disagree about the resulting URL.
+// Live filtering (2026-09-02): invoice_number now filters as you type
+// (debounced 350ms so it doesn't fire a navigation on every keystroke),
+// no Filter button/submit needed anymore. Segment changed from a free-text
+// input to a dropdown -- confirmed against synthetic/generator.py's own
+// SEGMENTS constant that there are exactly three real values in this
+// dataset (SMB / Mid-Market / Enterprise), so a dropdown is both more
+// correct (can't typo/miss a segment) and simpler than the text field it
+// replaced.
 
 const CURRENT_STATE_OPTIONS: AccountCurrentState[] = [
   "overdue",
@@ -27,8 +32,10 @@ const CURRENT_STATE_OPTIONS: AccountCurrentState[] = [
   "dispute_review",
 ];
 
+const SEGMENT_OPTIONS = ["SMB", "Mid-Market", "Enterprise"];
+
 const inputClass =
-  "rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm text-text placeholder:text-text-faint focus:outline-none focus:ring-2 focus:ring-accent/50 focus:border-accent/50 transition-colors";
+  "rounded-[var(--radius-control)] border border-border bg-surface-2 text-sm text-text placeholder:text-text-faint transition-colors focus:border-accent/50 focus:ring-2 focus:ring-accent/30 focus:outline-none";
 
 export default function InvoiceFilters({
   currentState,
@@ -40,6 +47,8 @@ export default function InvoiceFilters({
   invoiceNumber?: string;
 }) {
   const router = useRouter();
+  const [search, setSearch] = useState(invoiceNumber ?? "");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function navigate(nextCurrentState: string, nextSegment: string, nextInvoiceNumber: string) {
     const params = new URLSearchParams();
@@ -52,36 +61,37 @@ export default function InvoiceFilters({
     router.push(qs ? `/invoices?${qs}` : "/invoices");
   }
 
-  function handleStatusChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    navigate(e.target.value, segment ?? "", invoiceNumber ?? "");
+  function handleSearchChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value;
+    setSearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => navigate(currentState ?? "", segment ?? "", value), 350);
   }
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const data = new FormData(e.currentTarget);
-    navigate(
-      String(data.get("current_state") ?? ""),
-      String(data.get("segment") ?? ""),
-      String(data.get("invoice_number") ?? "")
-    );
-  }
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   const hasFilters = Boolean(currentState || segment || invoiceNumber);
 
   return (
-    <form onSubmit={handleSubmit} className="mb-5 flex flex-wrap items-center gap-3">
-      <input
-        type="text"
-        name="invoice_number"
-        defaultValue={invoiceNumber ?? ""}
-        placeholder="Search invoice # (e.g. INV-10184)"
-        className={cx(inputClass, "w-64")}
-      />
+    <div className="mb-5 flex flex-wrap items-center gap-2.5">
+      <div className="relative">
+        <Search size={14} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-text-faint" />
+        <input
+          type="text"
+          value={search}
+          onChange={handleSearchChange}
+          placeholder="Search invoice # (e.g. INV-10184)"
+          className={cx(inputClass, "w-64 py-2 pr-3 pl-9")}
+        />
+      </div>
       <select
-        name="current_state"
-        defaultValue={currentState ?? ""}
-        onChange={handleStatusChange}
-        className={inputClass}
+        value={currentState ?? ""}
+        onChange={(e) => navigate(e.target.value, segment ?? "", search)}
+        className={cx(inputClass, "px-3 py-2")}
       >
         <option value="">All statuses</option>
         {CURRENT_STATE_OPTIONS.map((s) => (
@@ -90,28 +100,30 @@ export default function InvoiceFilters({
           </option>
         ))}
       </select>
-      <input
-        type="text"
-        name="segment"
-        defaultValue={segment ?? ""}
-        placeholder="Segment (e.g. SMB)"
-        className={cx(inputClass, "w-40")}
-      />
-      <button
-        type="submit"
-        className="rounded-lg bg-accent px-3.5 py-1.5 text-sm font-medium text-white hover:bg-accent-hover transition-colors"
+      <select
+        value={segment ?? ""}
+        onChange={(e) => navigate(currentState ?? "", e.target.value, search)}
+        className={cx(inputClass, "px-3 py-2")}
       >
-        Filter
-      </button>
+        <option value="">All segments</option>
+        {SEGMENT_OPTIONS.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
       {hasFilters && (
         <button
           type="button"
-          onClick={() => navigate("", "", "")}
-          className="text-sm text-text-muted hover:text-text transition-colors"
+          onClick={() => {
+            setSearch("");
+            navigate("", "", "");
+          }}
+          className="flex items-center gap-1 text-sm text-text-muted transition-colors hover:text-text"
         >
-          Clear filters
+          <X size={13} /> Clear
         </button>
       )}
-    </form>
+    </div>
   );
 }

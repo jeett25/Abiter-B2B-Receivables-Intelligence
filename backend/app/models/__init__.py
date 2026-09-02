@@ -4,6 +4,7 @@ from app.models.attribution_record import AttributionRecord
 from app.models.case_embedding import CaseEmbedding
 from app.models.customer import Customer
 from app.models.decision_log import DecisionLog
+from app.models.evaluation_snapshot import EvaluationSnapshot
 from app.models.feature_snapshot import FeatureSnapshot
 from app.models.interaction import Interaction
 from app.models.invoice import Invoice
@@ -19,6 +20,7 @@ __all__ = [
     "CaseEmbedding",
     "Customer",
     "DecisionLog",
+    "EvaluationSnapshot",
     "FeatureSnapshot",
     "Interaction",
     "Invoice",

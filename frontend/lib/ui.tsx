@@ -1,7 +1,12 @@
-// Shared design-system primitives for the console (Phase C, subtask 11).
-// Tailwind utility classes reference the CSS custom properties defined in
-// app/globals.css's @theme block -- change the palette there, not here.
+// Shared design-system primitives for the console. Migrated (2026-09-02)
+// from the Day-6 Phase-C v1 pill/soft-badge look to the current "control
+// room" language established on the landing page: rectangular tracked-caps
+// mono tags instead of pill badges, the refined radius scale
+// (rounded-tag/control/card/panel), font-display for real headings. Tailwind
+// utility classes reference the CSS custom properties in app/globals.css's
+// @theme block -- change the palette there, not here.
 
+import type { LucideIcon } from "lucide-react";
 import { ReactNode } from "react";
 import { AccountCurrentState, ActionType, PolicyResult } from "./types";
 
@@ -87,11 +92,15 @@ export function policyMeta(result: PolicyResult) {
   return POLICY_META[result] ?? { label: result, tone: "neutral" as StatusTone };
 }
 
+// Rectangular tracked-caps mono tag -- replaces the earlier soft pill.
+// Matches the "control room" meta-text treatment used everywhere on the
+// landing page (badges/nav/labels), so a status marker in the console reads
+// as the same visual language, not a leftover from the old design pass.
 export function Badge({ tone, children, dot = true }: { tone: StatusTone; children: ReactNode; dot?: boolean }) {
   return (
     <span
       className={cx(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap",
+        "inline-flex items-center gap-1.5 rounded-[var(--radius-tag)] border px-2 py-1 font-mono text-[10.5px] font-medium tracking-wider whitespace-nowrap uppercase",
         TONE_CLASSES[tone]
       )}
     >
@@ -120,14 +129,9 @@ export function PolicyBadge({ result }: { result: PolicyResult | null | undefine
 // Layout primitives
 // ---------------------------------------------------------------------------
 
-export function Card({ children, className }: { children: ReactNode; className?: string }) {
+export function Card({ children, className, id }: { children: ReactNode; className?: string; id?: string }) {
   return (
-    <div
-      className={cx(
-        "rounded-2xl border border-border bg-surface/80 backdrop-blur-sm shadow-soft",
-        className
-      )}
-    >
+    <div id={id} className={cx("rounded-card border border-border bg-surface/80 shadow-soft backdrop-blur-sm scroll-mt-24", className)}>
       {children}
     </div>
   );
@@ -149,9 +153,9 @@ export function SectionCard({
   return (
     <section id={id} className={cx("scroll-mt-24", className)}>
       <Card className="p-5 sm:p-6">
-        <h2 className="flex items-center gap-2.5 text-sm font-semibold tracking-wide text-text-muted uppercase mb-4">
+        <h2 className="label mb-4 flex items-center gap-2.5 text-text-muted">
           {typeof index === "number" && (
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent-text text-[11px] font-mono-tabular normal-case">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-soft font-mono text-[11px] text-accent-text normal-case">
               {index}
             </span>
           )}
@@ -182,13 +186,54 @@ export function StatTile({
   tone?: "neutral" | "success" | "danger" | "accent";
 }) {
   return (
-    <div className="rounded-xl border border-border bg-surface-2/60 p-4">
-      <div className="text-xs font-medium text-text-muted uppercase tracking-wide">{label}</div>
-      <div className={cx("mt-1.5 text-2xl font-semibold font-mono-tabular", TILE_VALUE_CLASSES[tone])}>
-        {value}
-      </div>
+    <div className="rounded-card border border-border bg-surface-2/60 p-4">
+      <div className="label">{label}</div>
+      <div className={cx("mt-1.5 font-mono-tabular text-2xl font-semibold", TILE_VALUE_CLASSES[tone])}>{value}</div>
       {sub && <div className="mt-1 text-xs text-text-faint">{sub}</div>}
     </div>
+  );
+}
+
+// Icon-badged stat tile -- built for the metrics page's KPI row, promoted
+// here once the observability page needed the exact same pattern. Distinct
+// from StatTile above (no icon, tighter): use IconStat when a lucide icon
+// adds real scannability to a row of several tiles, StatTile for a plain
+// label/value pair elsewhere.
+const ICON_STAT_ICON_TONE: Record<"accent" | "success" | "neutral", string> = {
+  accent: "bg-accent-soft text-accent-text",
+  success: "bg-status-success-soft text-status-success",
+  neutral: "bg-surface-2 text-text-muted",
+};
+const ICON_STAT_VALUE_TONE: Record<"accent" | "success" | "neutral", string> = {
+  accent: "text-accent-text",
+  success: "text-status-success",
+  neutral: "text-text",
+};
+
+export function IconStat({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  tone = "neutral",
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: "accent" | "success" | "neutral";
+}) {
+  return (
+    <Card className="p-4 sm:p-5">
+      <div className="flex items-center gap-2.5">
+        <span className={cx("flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-control)]", ICON_STAT_ICON_TONE[tone])}>
+          <Icon size={15} strokeWidth={1.75} />
+        </span>
+        <div className="label !text-text-muted">{label}</div>
+      </div>
+      <div className={cx("mt-3 font-mono-tabular text-2xl font-semibold", ICON_STAT_VALUE_TONE[tone])}>{value}</div>
+      {sub && <div className="mt-1 text-xs text-text-faint">{sub}</div>}
+    </Card>
   );
 }
 
@@ -204,7 +249,7 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-text">{title}</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-text">{title}</h1>
         {subtitle && <p className="mt-1.5 max-w-3xl text-sm text-text-muted">{subtitle}</p>}
       </div>
       {actions && <div className="flex items-center gap-3">{actions}</div>}
@@ -220,7 +265,7 @@ export function ErrorPanel({ message, retryHref }: { message: string; retryHref:
       </p>
       <a
         href={retryHref}
-        className="mt-3 inline-block rounded-lg border border-status-danger/40 px-3 py-1.5 text-sm font-medium text-status-danger hover:bg-status-danger-soft transition-colors"
+        className="mt-3 inline-block rounded-[var(--radius-control)] border border-status-danger/40 px-3 py-1.5 text-sm font-medium text-status-danger transition-colors hover:bg-status-danger-soft"
       >
         Retry
       </a>
@@ -230,7 +275,7 @@ export function ErrorPanel({ message, retryHref }: { message: string; retryHref:
 
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-border-strong p-10 text-center text-sm text-text-faint">
+    <div className="rounded-card border border-dashed border-border-strong p-10 text-center text-sm text-text-faint">
       {children}
     </div>
   );

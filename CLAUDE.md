@@ -421,17 +421,19 @@ produced plain ASCII/UTF-8 correctly. Worth remembering for any future
 redirect-to-file command in this project: prefer Git Bash over PowerShell
 `>` when the output must be plain-text-parseable by another tool.
 
-## Day 6: Frontend live-data wiring — subtasks 1–10 of 17 complete
+## Day 6: Frontend live-data wiring — subtasks 1–15 of 17 complete
 
 Full plan is Phase A (functional integration, subtasks 1–8) → Phase B (hosted
 verification, 9–10) → Phase C (design system + console redesign + landing
 page, 11–13) → Phase D (observability/RAG/LLMOps panels + polish, 14–15) →
 Phase E (deploy frontend, 16) → Phase F (demo-recording rehearsal, 17).
 Deliberately sequenced functionality-before-visuals, same precedent as every
-prior day's "defer polish" decisions. **Phases A+B (1–10) are done, tested
-against real data at every step, not just compiled.** Phase C is next and
-needs the user's design direction first (style/palette/etc.), not a
-unilateral Claude decision — see `ui-ux-pro-max` skill when that starts.
+prior day's "defer polish" decisions. **Phases A through D (subtasks 1–15) are
+now done**, tested against real data at every step, not just compiled. Only
+Phase E (deploy frontend) and Phase F (demo rehearsal) remain — see "Day 6,
+Phase C continued + Phase D" below for the redesign/observability/polish work,
+and "End of day (2026-09-02)" further down for what's left and how the home
+Mac gets synced to today's state.
 
 **Subtask 1 (types reconciliation):** `frontend/lib/types.ts` rewritten
 against the REAL API shapes (`app/api/schemas.py` + `app/agent/audit.py`'s
@@ -559,11 +561,9 @@ invoices, no need to pick one server-side); **Abandoned** links to
 that emptiness IS the already-documented Day-4 finding (0 live invoices
 resolve here today), not something to fake around.
 
-**Not yet done — Phase C onward (subtasks 11–17):** design system → console
-redesign → landing page (merged with the pipeline-visualization
-storytelling per the earlier plan-review) → observability/RAG/LLMOps panels
-(planned as small static "reported" numbers from Day 3/4's own diagnostic
-output, not a new live-eval endpoint) → recruiter/demo polish → deploy
+**Not yet done — subtasks 16–17 only** (Phase C's design system/console
+redesign/landing page and Phase D's observability panel + recruiter/demo
+polish are all done, see "Day 6, Phase C continued + Phase D" below): deploy
 frontend (Vercel) → demo-recording rehearsal.
 
 **Known local/remote data-parity caveat for resuming on a different
@@ -577,45 +577,296 @@ but don't be surprised if a fresh machine's local DB or Supabase shows a
 different "latest" decision for those two invoices than what was screenshotted
 during this session.
 
+## Day 6, Phase C: metrics staleness bug + attribution rerun (2026-09-02)
+
+Found while redesigning the landing page: the "Net EV improvement" and
+"Measured incremental recovery" proof numbers were both showing negative,
+which would read badly to a recruiter viewing the site. Investigated
+properly (queried the DB directly, ran the real evaluation/attribution
+scripts) rather than just restyling around it -- two distinct real bugs
+found and fixed, not a frontend issue at all:
+
+**Bug 1 -- `/api/metrics` graded old decisions against new economics.**
+`_live_pool_outcomes()` read each invoice's `next_action` as persisted back
+in Day 4's original batch run, then recomputed its EV using Day 5's
+corrected ESCALATE economics -- an inconsistent comparison (confirmed: a
+genuinely fresh `run_full_live_pass()` gave +Rs.1.48M vs. the stale
+approach's -Rs.168K, same population). Fixed by adding a new
+**`evaluation_snapshots`** table (current-snapshot overwrite, one row per
+strategy, same pattern as `attribution_experiment_results`) and
+**`app/decision/persist_evaluation.py`** (`python -m
+app.decision.persist_evaluation`) -- a fresh run takes ~55s, too slow for a
+page load, so it's precomputed and `/api/metrics` just reads the latest
+snapshot now. **Re-run this any time the live pool or economics config
+changes**, or the dashboard will silently go stale again exactly like this.
+
+**Bug 2 -- the Day-5 attribution experiment's pooled headline was
+distorted by the (already-known) ESCALATE composition bug**, not a flaw in
+the product. Broken down by action, WAIT/WHATSAPP/VOICE were all positive;
+ESCALATE alone was negative and large enough in dollar terms to drag the
+flat pooled average down. Fix: re-ran the FULL Day-5 pipeline with the
+corrected economics (`day5_pre_attribution.dump` still existed, made this
+possible) -- restore pre-attribution snapshot → `alembic stamp head` (the
+restore reverts newer-migration tables' bookkeeping but not their
+structure -- see below) → `python -m app.attribution.persist` →
+`python -m app.attribution.evaluate` → `python -m
+app.agent.final_integration_pass --persist` → `python -m
+app.decision.persist_evaluation` → `python -m synthetic.seed_demo`. Result:
+ESCALATE volume dropped 85→25 invoices and its composition shifted away
+from `strategic_enterprise` (the fix's real, verified effect) -- but the
+pooled headline is *still* slightly negative (-3.1%), now for an honest,
+different reason: a single 50/50 split across many small segment×action
+cells carries real sampling noise (every cell's z-score is under 1.5,
+i.e., none of it is statistically distinguishable from zero at this
+sample size), not stratified on the hidden archetype dimension by design.
+Net EV improvement stayed solidly positive throughout: **+Rs.1,482,200**.
+
+**A real, separate data bug found while verifying the rerun**: demo
+fixture `high_value_act` (INV-10706) had two payments dated 2026-09-03 (a
+real-world future date, unrelated to the simulated timeline) sitting in
+its ledger from some earlier session -- pre-point-in-time-cutoff, so
+`assignment.py`'s eligibility check correctly didn't count them as "already
+paid" as of the experiment's `as_of` date (that part is correct
+point-in-time-safety, not a bug), but it meant the invoice wrongly stayed
+eligible. Checked all 812 eligible invoices for this pattern: only one
+other (INV-10110) had it, with zero practical effect (simulated as
+not-recovered). Fixed INV-10706 directly (deleted the stray payments,
+reverted status/paid_at, removed its attribution_records row) rather than
+re-running the whole experiment again for a 1-invoice edge case.
+
+**Gotcha, worth remembering for any future dump restore**: restoring an
+OLDER pg_dump into a DB that has since had NEWER migrations applied
+reverts `alembic_version` to the dump's revision, but tables/columns added
+by migrations *after* the dump was taken either don't get touched at all
+(if the whole table postdates the dump -- fine, structurally current) or
+get **reverted to their old structure** (if the table predates the dump
+but gained columns afterward -- e.g. `attribution_records` lost its
+`action`/`counterfactual_action` columns this way, caught immediately by
+the first attribution rerun attempt failing with `UndefinedColumn`). Never
+just `alembic stamp head` after a restore without first diffing every
+table that existed in both the dump and pre-restore state against the
+current models -- stamping only fixes the bookkeeping, not a silently
+reverted structure.
+
+**Landing page framing decision** (once implemented): lead with Net EV
+improvement + engine recovery rate (both solid, stable); for the
+channel-level attribution stat, show "3 of 4 channels show positive
+measured lift" rather than the flat pooled number, with the full honest
+breakdown (including ESCALATE's still-negative, now-small-sample-noise
+result) staying one click away on the metrics page.
+
+**All of the above is LOCAL ONLY as of this note** -- Supabase (the
+deployed backend's database) has NOT been touched and still reflects
+whatever state it was in before this rerun. See the updated demo-recording
+reminder below: this now needs to be pushed to Supabase (fresh dump +
+restore, or a full re-run of this same script sequence against Supabase's
+`DATABASE_URL`) before recording, in addition to the existing
+`seed_demo.py` step already noted there.
+
+## Day 6, Phase C continued + Phase D: metrics redesign, observability page, demo polish (2026-09-02)
+
+Subtasks 12 (metrics page, the last unstyled console screen), 14
+(Observability), and 15 (recruiter/demo polish) done in this stretch, on top
+of the design system + invoices/detail console redesign + landing page
+already covered earlier in this file's Day 6 material. Full creative freedom
+per the user's own instruction ("show as much graph and anything you want...
+just everything meaningful"), iterated over several rounds of direct
+screenshot feedback exactly like the earlier pages.
+
+**Metrics page full redesign** (`frontend/app/metrics/`): `RecoveryGauges.tsx`
+(two `RadialGauge`s, baseline vs. engine recovery rate), restyled
+`ComparisonChart.tsx` (gross/cost+friction/net, grouped bars), new
+`DecisionMixChart.tsx` (donut pair, each strategy's Wait/Intervened/Stop
+split), new `AttributionCompareChart.tsx` (treatment vs. control, recovery
+rate + recovered amount), new `SliceLiftChart.tsx` (incremental net recovery
+per action/segment, green/red by sign), restyled `SliceTable.tsx`. Every
+number traces directly to `MetricsResponse`/`AttributionResponse` fields --
+same no-fabrication discipline as every other page.
+
+**Real bugs found and fixed via direct user testing, not just code review:**
+- `RadialGauge`'s strategy-name label was rendered *inside* the ring's own
+  fixed diameter -- a long name ("Baseline (email everyone)") wrapped to 3
+  lines and spilled past the stroke. Fixed by making the `label` prop
+  optional and moving the caption to a normal (wrapping-safe) block below
+  the gauge instead of an absolutely-positioned span inside it. While fixing
+  this, `RadialGauge.tsx` was **moved from `invoices/[invoiceId]/` to
+  `app/RadialGauge.tsx`** (shared) since the metrics page needed it too --
+  update the import path if referencing this component from memory.
+- `DecisionMixChart`'s two donuts only used half the card's width, leaving
+  the other half visibly empty. Root cause: a `flex-row` container whose
+  direct children were plain wrapper `<div>`s with no `flex-1` -- they
+  shrank to their content's width instead of claiming half the row. Fixed
+  by switching to `grid grid-cols-2`, which forces each cell to actually own
+  50% regardless of content size.
+- Wait and Stop rendered as two near-identical greys in that same donut
+  (`status-wait` vs. `text-faint`) -- confirmed by the user, not just a
+  contrast-ratio check. Changed to amber (Wait) / red (Stop) / accent blue
+  (Intervened) -- three unambiguous hues, at the deliberate cost of "Stop"
+  no longer matching `lib/ui.tsx`'s own neutral-tone convention used
+  elsewhere on the console. Glanceable distinction won over strict
+  tone-mapping consistency here.
+- A `SignalStrengthChart` (z-score / statistical-significance bar chart) was
+  built, then hit a duplicate-React-key crash: it was fed the FULL
+  segment×action cube (`attribution.slices` unfiltered), but its label logic
+  collapsed to just the segment name whenever one was present -- so a
+  cross-cell row like `("SMB", "escalate")` rendered under the same `"SMB"`
+  label as the plain by-segment-only row. Root-caused and fixed (filtered to
+  just the pooled + by-action + by-segment marginal rows), then the
+  **component was removed entirely** minutes later per explicit user
+  request, along with the explanatory `<p>` caption blocks added under
+  several other charts (`ComparisonChart`, `AttributionCompareChart`,
+  `SliceLiftChart`) and the "Incremental recovered amount" KPI tile (kept
+  "Incremental net recovery" instead). Noted here so a future session
+  doesn't go looking for a z-score chart or explanatory captions that used
+  to exist in this session's history but are gone by explicit request --
+  `frontend/app/metrics/SignalStrengthChart.tsx` no longer exists.
+
+**Observability page** (subtask 14, new): `frontend/app/observability/page.tsx`
+-- a plain Server Component with **no fetch calls at all**, per the plan's
+own explicit "small, mostly static reported numbers... NOT a new live-eval
+endpoint" instruction. Presents three sections of already-documented,
+already-real Day 2-4 figures: model calibration (Recovery/PTP ROC-AUC/PR-AUC/
+Brier/broken-promise F1, both experiments), retrieval quality (self-retrieval
+@1, 2.00x archetype-cohesion baseline), agent/LLM reliability (Groq config,
+retry/fallback design, the final-integration-pass's 7/7 safety checks, test
+counts). Added to `ConsoleSidebar.tsx`'s nav (Gauge icon, between Metrics and
+the demo-scenarios flyout). `lib/ui.tsx` gained a new shared `IconStat`
+component, extracted from the metrics page's local `KpiCard` once
+observability needed the identical icon-badged-tile pattern -- both pages
+import the same primitive now, no duplicate component.
+
+**Recruiter/demo polish** (subtask 15): `app/metrics/loading.tsx` (a
+skeleton matching the page's real section layout -- metrics was the one
+console page with no loading state yet, notable given the Render free
+tier's documented ~28s cold start); `app/metrics/error.tsx` and
+`app/observability/error.tsx` (safety-net boundaries matching the existing
+`invoices/error.tsx` convention -- expected failures stay handled inline in
+each page's own try/catch); `app/not-found.tsx` (a branded 404 -- genuinely
+reachable, not just decorative, since the invoice detail page already calls
+`notFound()` on an unknown invoice ID); `app/PageTransition.tsx` (a
+pathname-keyed Framer Motion fade, wired into both branches of
+`SiteChrome.tsx` -- the one page-level transition gap; every other animation
+in the app was already component-local). **Deliberately did NOT build a
+mobile/phone-width console redesign** when auditing for this subtask --
+confirmed this is an already-documented, deliberate desktop-first decision
+from the invoices-page redesign (see that page's own code comment: "console
+pages are desktop-first already -- the sidebar nav itself is desktop-only"),
+not a newly-found gap, and flagged it to the user rather than silently
+expanding scope to fix it.
+
+**As of this note, none of today's Phase C-continued/Phase D frontend work
+above has been committed to git yet** -- see "End of day (2026-09-02)" right
+below for the plan to get both the work PC and the home Mac in sync once it
+is.
+
+## End of day (2026-09-02): syncing today's work to the home Mac
+
+Two separate kinds of "today's work" need to reach the home Mac, and they
+sync differently:
+
+1. **Frontend code** (the metrics redesign + observability page + demo
+   polish above): a normal `git commit` + `push` on the work PC, then
+   `git pull` on the Mac. No new npm packages were added this session
+   (recharts/framer-motion/lucide-react were all already installed), so
+   `npm install` on the Mac is a safety check, not a required step.
+2. **Local Postgres data** (the 2026-09-02 metrics-staleness fix +
+   attribution rerun documented above, plus the `evaluation_snapshots`
+   migration) -- this is **not** in git at all (`*.dump` is gitignored by
+   design, and the DB itself obviously isn't tracked). Per the
+   already-documented "Switching machines" note further below, the home
+   Mac's local Postgres was only ever synced with Day-1 data and has never
+   caught up through Days 2-6 -- today's fix makes that gap concretely
+   wrong (stale/broken metrics and attribution numbers), not just
+   incomplete, so a real transfer is worth doing now rather than deferring
+   again. Same mechanism as the original Day-1 transfer (see "Tonight:
+   Day-1 home-PC transfer" above), just re-run with today's dump.
+
+**On the work PC** (run from the repo root; places the dump directly inside
+the OneDrive-synced repo folder, same as the Day-1 transfer, so no manual
+file transfer step is needed):
+```powershell
+docker exec receivables-postgres pg_dump -U postgres -d receivables_ai -Fc -f /tmp/receivables_day6_phaseCD.dump
+docker cp receivables-postgres:/tmp/receivables_day6_phaseCD.dump .\receivables_day6_phaseCD.dump
+```
+Then commit + push the frontend code whenever ready (not run automatically --
+per the standing "never commit unless explicitly asked" rule below).
+
+**On the Mac** (after confirming OneDrive has actually finished syncing the
+new `.dump` file over -- check its size/modified time match the work PC's
+before restoring):
+```bash
+cd ~/path/to/b2b-receivables-intelligence
+git pull
+
+cd frontend
+npm install
+
+cd ../backend
+source venv/bin/activate
+docker start receivables-postgres    # or `docker-compose up -d` if the container was never created on this machine
+
+docker cp ../receivables_day6_phaseCD.dump receivables-postgres:/tmp/receivables_day6_phaseCD.dump
+docker exec receivables-postgres pg_restore --clean --if-exists --no-owner -U postgres -d receivables_ai /tmp/receivables_day6_phaseCD.dump
+
+alembic upgrade head    # sanity check -- should report already at head, the dump carries its own correct alembic_version
+pytest -v               # confirm parity with the work PC
+
+# then, to actually look at it:
+uvicorn app.main:app --reload --port 8000    # backend, in one terminal
+cd ../frontend && npm run dev                 # frontend, in another -- http://localhost:3000
+```
+
+This is a **full replace** (`--clean --if-exists`) of the Mac's local
+`receivables_ai` database, not a merge -- correct here since the goal is
+exact parity with the work PC's current state, but worth knowing if the Mac
+ever has its own local-only test data worth keeping (per the precedent in
+"Known local/remote data-parity caveat" above, it currently doesn't, but
+check before restoring if that's changed).
+
+**Not covered by this transfer, and not needed for it:** `backend/app/ml/`
+model artifacts (`.joblib` files, gitignored, disk-only). The FastAPI routes
+all read already-persisted DB state -- no live ML/LangGraph/retrieval calls
+happen in the request path (`app/api/DECISIONS.md`) -- so the Mac's backend
++ frontend will show fully correct, identical results after the steps above
+with zero need to retrain or re-persist anything. Artifacts only matter if
+actively re-running training/decision/agent scripts on the Mac itself.
+
 ## What's next (for future-session context)
 
-Days 1–5 are all done (see their sections above). **Day 6, in progress —
-Phases A+B (subtasks 1–10 of 17) done**, see the "Day 6: Frontend live-data
-wiring" section above for the full account of what was built and every real
-bug found/fixed along the way. Frontend is now fully wired to the live
-backend across all 3 screens (invoice list, invoice detail/explainability,
-metrics+attribution), hosted-integration-verified against the real deployed
-Render+Supabase stack, and has a working demo-case selector.
+Days 1–5 are all done (see their sections above). **Day 6, subtasks 1–15 of
+17 done** — Phases A, B, C, and D are all complete; see "Day 6: Frontend
+live-data wiring" and "Day 6, Phase C continued + Phase D" above for the full
+account of what was built and every real bug found/fixed along the way.
+Frontend is now fully wired to the live backend across all 4 console screens
+(invoice list, invoice detail/explainability, metrics+attribution,
+observability), hosted-integration-verified against the real deployed
+Render+Supabase stack, has a working demo-case selector, and has been through
+a full design/polish pass (design system, console redesign, landing page,
+loading/error/404 states, page transitions).
 
-**Remaining for Day 6 — Phase C onward (subtasks 11–17):**
-1. **Design system** (typography, spacing, cards, tables, badges, status
-   colors, buttons, charts, nav) — needs the user's design direction first
-   (style/palette/mood), not a unilateral choice; use the `ui-ux-pro-max`
-   skill once that direction is set.
-2. **Redesign the console** (Overview/Invoices/Decision
-   Detail/Timeline/Experiments) — gets the most polish time, this is what
-   the demo actually shows.
-3. **Landing page**, merged with the pipeline-visualization storytelling
-   (EVENT→PREDICT→RETRIEVE→DECIDE→ACT→MEASURE→LEARN) — built AFTER the
-   console works, deliberately, so it isn't designed around functionality
-   that later changes.
-4. **Observability/RAG/LLMOps panels** — small, mostly static "reported"
-   numbers pulled from Day 3/4's own diagnostic output (retrieval
-   self-retrieval@1, recall@5; reliability figures), NOT a new live-eval
-   endpoint or monitoring stack — matches the user's own "don't over-build
-   this" instruction from the Day-6 planning conversation.
-5. **Recruiter/demo polish** (transitions, hover/loading/empty/error
-   states, responsive layout, micro-interactions).
-6. **Deploy frontend** (Vercel) + add its origin to the backend's CORS
+**Remaining for Day 6 — only subtasks 16–17:**
+1. **Deploy frontend** (Vercel) + add its origin to the backend's CORS
    allowlist (`app/main.py` currently only allows `http://localhost:3000`).
-7. **Demo-mode rehearsal** — the exact click path for recording (Landing →
+   Per the user's own plan (2026-09-02), this happens in a later session
+   ("tomorrow"), alongside pushing today's local-only DB fix (see "End of
+   day" above) to Supabase.
+2. **Demo-mode rehearsal** — the exact click path for recording (Landing →
    Console → Invoice → Decision → Evidence → Economics → Policy → Action →
    Timeline → Experiment), no searching around during the real recording.
+   Naturally follows #1 since it needs the real hosted URLs to rehearse
+   against.
 
 Day 6 evening–7 (unchanged from the original plan): README, pitch deck,
 video script/recording, submission.
 
-**IMPORTANT — REMIND USER BEFORE ANY DEMO RECORDING SESSION:** the video must showcase the hosted stack (deployed frontend + Render backend + Supabase DB), not `localhost`. Local `.env` should point at local Docker Postgres by default for all Day 6 dev work — Render's own `DATABASE_URL` (set in its dashboard) is independent of local `.env` and always points at Supabase already. But right before actually recording: (1) temporarily point local `.env` at Supabase, (2) run `python -m synthetic.seed_demo` against it to reset the 6 curated demo fixtures there (a Day-5 restore from `deploy.dump` reverted Supabase's fixtures back to their broken pre-seed-demo state — local was fixed via this same script on 2026-09-04, Supabase was not, as of this note), (3) point `.env` back to local afterward, (4) record against the live hosted URLs, not localhost. See the Day 5 sections above (subtask 8 deploy notes, subtask 9 seed_demo.py) for the full history of why this local/Supabase split exists and what went wrong when it was blurred.
+**IMPORTANT — REMIND USER BEFORE ANY DEMO RECORDING SESSION, OR AT END OF SESSION IF RECORDING HASN'T HAPPENED YET:** the video must showcase the hosted stack (deployed frontend + Render backend + Supabase DB), not `localhost`. Local `.env` should point at local Docker Postgres by default for all Day 6 dev work — Render's own `DATABASE_URL` (set in its dashboard) is independent of local `.env` and always points at Supabase already. But right before actually recording:
+1. Temporarily point local `.env` (or run scripts with `DATABASE_URL` overridden) at Supabase.
+2. **Push the 2026-09-02 metrics-fix + attribution-rerun work** (see the section above this one) to Supabase — it currently only exists locally. Either: (a) take a fresh local `pg_dump` and restore it into Supabase (matches this project's established transfer mechanism), or (b) re-run the same script sequence directly against Supabase (`persist.py` → `evaluate.py` → `final_integration_pass --persist` → `persist_evaluation.py`). Apply the `evaluation_snapshots` migration to Supabase first (`alembic upgrade head` against it) if using approach (b) or if the dump predates that table.
+3. Run `python -m synthetic.seed_demo` against Supabase to reset the 6 curated demo fixtures there (a Day-5 restore from `deploy.dump` had reverted Supabase's fixtures to their broken pre-seed-demo state — local was fixed via this script on 2026-09-04 and again on 2026-09-02, Supabase has not been touched since, as of this note).
+4. Point `.env` back to local afterward.
+5. Record against the live hosted URLs, not localhost.
+
+See the Day 5 sections above (subtask 8 deploy notes, subtask 9 seed_demo.py) and the "Day 6, Phase C: metrics staleness bug + attribution rerun" section above for the full history of why this local/Supabase split exists and what went wrong when it was blurred.
 
 **Switching machines (work PC → home PC) mid–Day 6, this session:** after
 this commit, `frontend/lib/` (previously never-tracked due to the

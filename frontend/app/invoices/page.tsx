@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ApiError, listInvoices } from "@/lib/api";
 import { ErrorPanel, EmptyState, PageHeader } from "@/lib/ui";
 import RefreshButton from "../RefreshButton";
@@ -6,11 +7,11 @@ import InvoiceFilters from "./InvoiceFilters";
 import InvoiceRow from "./InvoiceRow";
 
 // Screen 1 (master doc Day 3): overdue invoices, status, recoverability
-// score, next action. Day 6: connected to the real GET /api/invoices.
-// Pagination is driven by the URL's searchParams via plain <Link>s (Server
-// Component, no client JS needed there); filtering is delegated to
-// InvoiceFilters, a small client component, so selecting a Status applies
-// immediately via client-side navigation instead of requiring a submit click.
+// score, next action. Redesigned (2026-09-02) against the new console
+// shell (ConsoleSidebar) -- this page now runs full-width (no max-w-7xl
+// cap, that constraint lived on the old shared layout, which the console
+// route group no longer uses) since a dense data table benefits from the
+// extra width a centered marketing-page column doesn't need.
 
 const PAGE_SIZE = 50;
 
@@ -67,27 +68,38 @@ export default async function InvoicesPage({
       {invoices.length === 0 ? (
         <EmptyState>No invoices match these filters.</EmptyState>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-border">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-border bg-surface-2/60 text-left text-xs font-medium uppercase tracking-wide text-text-muted">
-                  <th className="px-4 py-3">Invoice #</th>
-                  <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3 text-right">Amount</th>
-                  <th className="px-4 py-3">Due Date</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Recoverability</th>
-                  <th className="px-4 py-3">Next Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoices.map((invoice, i) => (
-                  <InvoiceRow key={invoice.invoice_id} invoice={invoice} index={i} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+        // Second attempt at the sticky header still didn't stick -- rather
+        // than keep guessing at the overflow-hidden ancestor's exact
+        // behavior, it's removed entirely here. NO ancestor between the
+        // sticky <thead> and the real page scroll now has any `overflow`
+        // property at all, which is the only fully unambiguous way to
+        // guarantee `sticky` tracks page scroll. Rounded corners are done
+        // per-cell instead (top corners on the header's outer cells, bottom
+        // corners on the last row's outer cells via InvoiceRow's `isLast`)
+        // rather than relying on a clipping wrapper. Trade-off: dropped the
+        // overflow-x-auto horizontal-scroll-on-mobile wrapper along with
+        // it -- console pages are desktop-first already (the sidebar nav
+        // itself is desktop-only), so this isn't a new gap.
+        <div className="rounded-panel border border-border">
+          <table className="w-full border-collapse text-sm">
+            <thead className="sticky top-0 z-20">
+              <tr className="border-b border-border bg-surface-2/95 text-left backdrop-blur-md">
+                <th className="w-1 rounded-tl-panel p-0" />
+                <th className="label !text-text px-4 py-3">Invoice #</th>
+                <th className="label !text-text px-4 py-3">Customer</th>
+                <th className="label !text-text px-4 py-3 text-right">Amount</th>
+                <th className="label !text-text px-4 py-3">Due Date</th>
+                <th className="label !text-text px-4 py-3">Status</th>
+                <th className="label !text-text px-4 py-3 text-right">Recoverability</th>
+                <th className="label !text-text rounded-tr-panel px-4 py-3">Next Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.map((invoice, i) => (
+                <InvoiceRow key={invoice.invoice_id} invoice={invoice} index={i} isLast={i === invoices.length - 1} />
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -101,17 +113,17 @@ export default async function InvoicesPage({
           {offset > 0 && (
             <Link
               href={buildHref(currentState, segment, invoiceNumber, Math.max(0, offset - PAGE_SIZE))}
-              className="rounded-lg border border-border px-3 py-1.5 text-text-muted hover:text-text hover:border-border-strong transition-colors"
+              className="flex items-center gap-1 rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-text-muted transition-colors hover:border-border-strong hover:text-text"
             >
-              ← Previous
+              <ChevronLeft size={14} /> Previous
             </Link>
           )}
           {invoices.length === PAGE_SIZE && (
             <Link
               href={buildHref(currentState, segment, invoiceNumber, offset + PAGE_SIZE)}
-              className="rounded-lg border border-border px-3 py-1.5 text-text-muted hover:text-text hover:border-border-strong transition-colors"
+              className="flex items-center gap-1 rounded-[var(--radius-control)] border border-border px-3 py-1.5 text-text-muted transition-colors hover:border-border-strong hover:text-text"
             >
-              Next →
+              Next <ChevronRight size={14} />
             </Link>
           )}
         </div>

@@ -1,76 +1,166 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { useRef, useState } from "react";
+import { AnimatePresence, motion, useMotionValueEvent, useScroll, useSpring } from "framer-motion";
+import { RotateCcw } from "lucide-react";
 
 const STAGES = [
-  { key: "event", label: "Event", detail: "Invoice overdue, customer replies, promise breaks" },
-  { key: "predict", label: "Predict", detail: "Calibrated XGBoost recovery + promise-to-pay models" },
-  { key: "retrieve", label: "Retrieve", detail: "Hybrid BM25 + pgvector case retrieval, RRF fused" },
-  { key: "decide", label: "Decide", detail: "Expected-value economics + deterministic policy gate" },
-  { key: "act", label: "Act", detail: "Email · WhatsApp · Voice · Payment Link · Escalate" },
-  { key: "measure", label: "Measure", detail: "Randomized holdout attribution, not vanity metrics" },
-  { key: "learn", label: "Learn", detail: "Measured uplift corrects the next decision's economics" },
+  {
+    key: "event",
+    label: "Event",
+    detail: "An invoice goes overdue, a customer replies, or a promise to pay breaks. Every one of these is a real, timestamped trigger — not a scheduled batch job.",
+  },
+  {
+    key: "predict",
+    label: "Predict",
+    detail: "Calibrated XGBoost models score recovery probability and promise-to-pay confidence, trained strictly point-in-time so no feature ever leaks the future.",
+  },
+  {
+    key: "retrieve",
+    label: "Retrieve",
+    detail: "Hybrid BM25 + pgvector search pulls similar historical cases, fused by Reciprocal Rank Fusion, so every decision has grounded precedent behind it.",
+  },
+  {
+    key: "decide",
+    label: "Decide",
+    detail: "Expected-value economics rank every candidate action, then a deterministic Policy/Safety Gate — never an LLM — makes the final call.",
+  },
+  {
+    key: "act",
+    label: "Act",
+    detail: "Email, WhatsApp, Voice, a real Razorpay Payment Link, or Escalate — whichever the economics and policy gate together approve, executed for real.",
+  },
+  {
+    key: "measure",
+    label: "Measure",
+    detail: "A randomized holdout — treatment vs. control — measures what actually happened, not what the model assumed would happen.",
+  },
+  {
+    key: "learn",
+    label: "Learn",
+    detail: "Measured incremental recovery corrects the Economics Engine's own uplift assumptions for the next decision — a real feedback loop, not a one-shot model.",
+  },
 ];
 
+// Rebuilt again (2026-09-02): the previous version used a CSS Grid
+// col-start-1/col-start-2 + text-align trick to alternate sides, which
+// wasn't rendering correctly (every row ended up in the same visual
+// position). Replaced with an explicit, unambiguous layout -- each row
+// always renders BOTH a left half and a right half (each a real sm:w-1/2
+// flex child), and the actual content only ever goes into whichever half
+// matches that step's side. No auto-placement, no alignment trick that can
+// silently not apply -- the DOM structure itself guarantees the side.
 export default function PipelineViz() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start 0.8", "end 0.35"],
+  });
+  const lineProgress = useSpring(scrollYProgress, { stiffness: 90, damping: 24, mass: 0.4 });
+
   return (
-    <div className="relative overflow-x-auto py-4">
-      <div className="flex min-w-[900px] items-stretch gap-3 sm:min-w-0">
-        {STAGES.map((stage, i) => (
-          <div key={stage.key} className="flex flex-1 items-center">
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-60px" }}
-              transition={{ duration: 0.45, delay: i * 0.08 }}
-              className="group relative flex-1 rounded-2xl border border-border bg-surface/70 p-4 backdrop-blur-sm transition-colors hover:border-accent/40"
-            >
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent-soft font-mono-tabular text-xs font-semibold text-accent-text">
-                {String(i + 1).padStart(2, "0")}
-              </div>
-              <div className="mt-3 text-sm font-semibold text-text">{stage.label}</div>
-              <div className="mt-1 text-xs leading-relaxed text-text-faint">{stage.detail}</div>
-              <motion.div
-                className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100"
-                style={{
-                  background:
-                    "radial-gradient(120px circle at var(--x,50%) var(--y,50%), rgb(61 127 255 / 0.12), transparent 70%)",
-                }}
-              />
-            </motion.div>
-            {i < STAGES.length - 1 && (
-              <motion.svg
-                width="28"
-                height="16"
-                viewBox="0 0 28 16"
-                className="mx-1 shrink-0 text-text-faint"
-                initial={{ opacity: 0 }}
-                whileInView={{ opacity: 1 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.08 + 0.2 }}
-              >
-                <line x1="0" y1="8" x2="20" y2="8" stroke="currentColor" strokeWidth="1.5" strokeDasharray="3 3" />
-                <path d="M18 3l6 5-6 5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-              </motion.svg>
-            )}
-          </div>
-        ))}
-      </div>
-      {/* LEARN loops back to PREDICT -- the feedback loop is the entire point of Day 5's attribution engine */}
+    <div ref={containerRef} className="relative py-4">
+      <div className="absolute top-0 bottom-0 left-3 w-px bg-border sm:left-1/2" />
       <motion.div
-        initial={{ opacity: 0 }}
-        whileInView={{ opacity: 1 }}
-        viewport={{ once: true }}
-        transition={{ delay: 0.8 }}
-        className="mt-3 flex items-center gap-2 text-xs text-accent-text"
+        className="absolute top-0 left-3 w-px origin-top bg-gradient-to-b from-accent to-accent-text sm:left-1/2"
+        style={{ scaleY: lineProgress, height: "100%" }}
+      />
+
+      <ol className="relative space-y-1">
+        {STAGES.map((stage, i) => (
+          <StageRow key={stage.key} stage={stage} index={i} onRight={i % 2 === 1} />
+        ))}
+      </ol>
+
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        whileInView={{ opacity: 1, scale: 1 }}
+        viewport={{ once: true, amount: 0.8 }}
+        transition={{ delay: 0.2, duration: 0.4 }}
+        className="relative mt-4 ml-9 flex items-start gap-2.5 rounded-lg border border-accent/25 bg-accent-soft/30 px-4 py-3 text-xs text-accent-text sm:ml-[calc(50%+2rem)]"
       >
-        <svg width="16" height="16" viewBox="0 0 16 16">
-          <path d="M3 8a5 5 0 1 1 2 4" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M3 12v-3h3" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-        Measured incremental recovery feeds back into the Economics Engine&rsquo;s assumptions — this loop is what
-        separates a decision engine from a rules script.
+        <motion.span
+          animate={{ rotate: -360 }}
+          transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+          className="mt-0.5 shrink-0"
+        >
+          <RotateCcw size={14} />
+        </motion.span>
+        <span>
+          Learn loops back into Predict — this feedback loop is what separates a decision engine from a
+          rules script.
+        </span>
       </motion.div>
     </div>
+  );
+}
+
+function StageContent({ stage, active, align }: { stage: (typeof STAGES)[number]; active: boolean; align: "left" | "right" }) {
+  return (
+    <div className={align === "right" ? "text-right" : ""}>
+      <span className={`font-display text-lg font-semibold transition-colors duration-300 ${active ? "text-text" : "text-text-faint"}`}>
+        {stage.label}
+      </span>
+      <AnimatePresence initial={false}>
+        {active && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden"
+          >
+            <p className={`max-w-md pt-1.5 text-sm leading-relaxed text-text-muted ${align === "right" ? "ml-auto" : ""}`}>
+              {stage.detail}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function StageRow({ stage, index, onRight }: { stage: (typeof STAGES)[number]; index: number; onRight: boolean }) {
+  const ref = useRef<HTMLLIElement>(null);
+  const [active, setActive] = useState(index === 0);
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start 0.65", "end 0.35"] });
+
+  useMotionValueEvent(scrollYProgress, "change", (v) => {
+    setActive(v > 0.15 && v < 0.85);
+  });
+
+  return (
+    <motion.li
+      ref={ref}
+      className="relative py-3 pl-9 sm:flex sm:items-start sm:pl-0"
+      initial={{ opacity: 0, x: -12 }}
+      whileInView={{ opacity: 1, x: 0 }}
+      viewport={{ once: true, amount: 0.6 }}
+      transition={{ duration: 0.4 }}
+    >
+      <motion.span
+        className="absolute top-3.5 left-3 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border-2 bg-bg sm:left-1/2"
+        animate={{
+          borderColor: active ? "var(--color-accent)" : "var(--color-border-strong)",
+          scale: active ? 1.15 : 1,
+        }}
+        transition={{ duration: 0.3 }}
+      >
+        {active && <span className="absolute h-full w-full animate-ping rounded-full bg-accent/30" />}
+        <span className={`label !text-[9px] !tracking-normal ${active ? "text-accent-text" : "text-text-faint"}`}>
+          {index + 1}
+        </span>
+      </motion.span>
+
+      {/* Mobile: single column, always show content (no left/right split). */}
+      <div className="sm:hidden">
+        <StageContent stage={stage} active={active} align="left" />
+      </div>
+
+      {/* Desktop: two ALWAYS-present halves, content only in the matching
+          one -- guarantees the side, no auto-placement involved. */}
+      <div className="hidden sm:block sm:w-1/2 sm:pr-10">{!onRight && <StageContent stage={stage} active={active} align="right" />}</div>
+      <div className="hidden sm:block sm:w-1/2 sm:pl-10">{onRight && <StageContent stage={stage} active={active} align="left" />}</div>
+    </motion.li>
   );
 }

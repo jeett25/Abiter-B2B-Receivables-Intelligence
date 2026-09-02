@@ -1,162 +1,246 @@
 import Link from "next/link";
-import { getMetrics } from "@/lib/api";
+import { Compass, FileSearch, Gauge, ShieldCheck, TableProperties } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
+import { getAttribution, getMetrics } from "@/lib/api";
 import { formatCurrency, formatPercent } from "@/lib/ui";
+import ChannelLiftChart, { ChannelLift } from "./ChannelLiftChart";
 import FadeIn from "./FadeIn";
 import HeroActions from "./HeroActions";
+import HeroBackground from "./HeroBackground";
+import KeyDecisions from "./KeyDecisions";
 import PipelineViz from "./PipelineViz";
+import { ConfidenceMeterVisual, NoiseVsSignalVisual, WastedSpendVisual } from "./ProblemVisual";
 
-// Landing page (subtask 13) -- built after the console works, so it isn't
-// designed around functionality that later changed. Every number on this
+// Landing page (Phase C redesign, "Arbiter" identity). Every number on this
 // page is fetched live from the real backend; nothing here is hardcoded
 // marketing copy pretending to be a metric. If the backend is unreachable,
 // the proof-metrics section degrades gracefully rather than breaking the
 // whole page (this is a landing page, not a critical data screen).
+//
+// Framing note (2026-09-02): the flat pooled "measured incremental
+// recovery" figure is real but compositionally noisy at this sample size
+// (see CLAUDE.md's "Day 6, Phase C: metrics staleness bug + attribution
+// rerun" section) -- 3 of 4 channels show a genuine positive lift, one
+// (Escalate) doesn't, on a small enough sample that none of it clears a
+// reasonable significance bar. The per-channel chart below shows this
+// directly instead of hiding behind a single pooled number.
 
-const KEY_DECISIONS = [
+const PROBLEMS = [
   {
-    title: "No LLM chooses the action",
-    body: "The Economics Engine and deterministic Policy/Safety Gate make every decision. The only LLM call in the system extracts a payment promise from a customer's message — it never influences recovery scoring, economics, or policy.",
+    n: "01",
+    t: "Chasing everything wastes money",
+    d: "A flat \"email everyone\" policy spends cost and friction on invoices that were always going to pay on their own, or were never going to pay at all.",
+    visual: <WastedSpendVisual />,
   },
   {
-    title: "Attribution over vanity metrics",
-    body: "A randomized holdout (treatment vs. control) measures real incremental recovery, not just 'we sent more messages.' Day 5's experiment closes the loop by correcting the Economics Engine's own uplift assumptions against what was actually observed.",
+    n: "02",
+    t: "No confidence signal on promises",
+    d: "\"I'll pay Friday\" — is that credible? Without a calibrated model, every promise looks identical.",
+    visual: <ConfidenceMeterVisual />,
   },
   {
-    title: "Policy gate is a hard boundary",
-    body: "8 fixed-priority rules — already-paid (cross-referenced against the real payments ledger, not invoice status), disputed invoices, contact caps, cooldowns, business hours, human-approval routing for large escalations — sit between the model's recommendation and any real-world action.",
-  },
-  {
-    title: "Every score is point-in-time safe",
-    body: "Recovery and promise-to-pay models are trained and scored strictly as of a cutoff — no feature is ever computed using information that wouldn't have existed yet. Verified with adversarial future-leakage regression tests, not just asserted.",
+    n: "03",
+    t: "No way to prove it worked",
+    d: "Recovery went up — but would it have gone up anyway? Without a control group you're measuring noise.",
+    visual: <NoiseVsSignalVisual />,
   },
 ];
 
+const WALKTHROUGH = [
+  { icon: FileSearch, label: "Root cause" },
+  { icon: Gauge, label: "Recoverability" },
+  { icon: TableProperties, label: "Economics" },
+  { icon: ShieldCheck, label: "Policy" },
+  { icon: Compass, label: "Timeline" },
+];
+
+interface ProofMetrics {
+  netImprovement: number;
+  recoveryRate: number;
+  nInvoices: number;
+  positiveChannels: number;
+  totalChannels: number;
+  channelLifts: ChannelLift[];
+}
+
 export default async function LandingPage() {
-  let proofMetrics: { netImprovement: number; recoveryRate: number; incrementalRecovery: number | null; nInvoices: number } | null = null;
+  let proofMetrics: ProofMetrics | null = null;
   try {
-    const metrics = await getMetrics();
+    const [metrics, attribution] = await Promise.all([getMetrics(), getAttribution()]);
+    const byAction = attribution.slices.filter((s) => s.segment === null && s.action !== null);
     proofMetrics = {
       netImprovement: metrics.engine.net_expected_recovered - metrics.baseline.net_expected_recovered,
       recoveryRate: metrics.engine.recovery_rate,
-      incrementalRecovery: metrics.attribution?.incremental_recovery_rate ?? null,
       nInvoices: metrics.engine.n_invoices,
+      positiveChannels: byAction.filter((s) => s.incremental_recovery_rate > 0).length,
+      totalChannels: byAction.length,
+      channelLifts: byAction.map((s) => ({ action: s.action as string, incrementalRecoveryRate: s.incremental_recovery_rate })),
     };
   } catch {
     proofMetrics = null;
   }
 
   return (
-    <div className="space-y-24 pb-16">
-      {/* Hero */}
-      <section className="relative flex flex-col items-start gap-6 pt-8 sm:pt-16">
+    <div className="space-y-28 pb-16">
+      {/* ================= Hero ================= */}
+      <section className="relative flex flex-col items-start gap-8 pt-6 sm:pt-14">
+        <HeroBackground />
+
         <FadeIn>
-          <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-text-muted">
+          <span className="label inline-flex items-center gap-2 rounded-sm border border-border bg-surface/70 px-2.5 py-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-status-success" />
-            Razorpay AI Buildathon 2026 · Track 03, AI Revenue Recovery
+            Engine live &nbsp;·&nbsp; Deterministic policy gate &nbsp;·&nbsp; Real-time recovery decisions
           </span>
         </FadeIn>
+
         <FadeIn delay={0.05}>
-          <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-text sm:text-5xl">
-            A decision engine for overdue B2B invoices — not a collections bot.
+          <h1 className="max-w-2xl text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
+            <span className="block text-text">Chase it.</span>
+            <span className="block text-text-muted">Or don&rsquo;t.</span>
+            <span className="block text-accent-text">Arbiter knows which.</span>
           </h1>
         </FadeIn>
-        <FadeIn delay={0.1}>
-          <p className="max-w-2xl text-base text-text-muted sm:text-lg">
-            For every overdue invoice, it decides <em>whether</em> chasing it is worth it, <em>why</em> it&rsquo;s
-            late, <em>how confident</em> to be in a payment promise, <em>which</em> intervention is
-            cheapest-and-effective, executes it inside compliant guardrails, and <em>proves</em> how much money it
-            actually caused to come in — via a randomized holdout, not a guess.
+
+        <FadeIn delay={0.12}>
+          <p className="max-w-xl text-base text-text-muted sm:text-lg">
+            For every overdue B2B invoice, Arbiter decides <em>whether</em> chasing it is worth it,{" "}
+            <em>why</em> it&rsquo;s late, <em>how confident</em> to be in a payment promise, and{" "}
+            <em>which</em> intervention is cheapest-and-effective — then executes it inside compliant
+            guardrails and <em>proves</em> how much money it actually caused to come in, via a randomized
+            holdout, not a guess.
           </p>
         </FadeIn>
+
         <HeroActions />
+
+        {/* Two headline numbers only, as interactive stat blocks -- the full
+            4-stat + chart breakdown lives once, further down in "Proof, not
+            a pitch". Showing the same numbers twice (once as plain text
+            here, once boxed there) was the actual complaint -- fixed by not
+            duplicating, not just by restyling. */}
+        {proofMetrics && (
+          <FadeIn delay={0.2} className="grid w-full max-w-md grid-cols-2 gap-4">
+            <StatBlock label="Net EV improvement" value={formatCurrency(proofMetrics.netImprovement)} />
+            <StatBlock label="Engine recovery rate" value={formatPercent(proofMetrics.recoveryRate)} />
+          </FadeIn>
+        )}
       </section>
 
-      {/* Problem */}
+      {/* ================= Problem — three equal cards, each its own visual =================
+          Was a 2-col "lead" card + 2 stacked smaller ones -- the lead card
+          ended up much taller than its content needed, reading as mostly
+          empty space. Equal-sized cards fixed that structurally rather
+          than needing to fill the extra height with more decoration. */}
       <FadeIn>
-        <section className="grid gap-6 sm:grid-cols-3">
-          {[
-            { n: "01", t: "Chasing everything wastes money", d: "A flat 'email everyone' policy spends cost + friction on invoices that were always going to pay, or never will." },
-            { n: "02", t: "No confidence signal on promises", d: "A customer says 'I'll pay Friday' — is that credible? Without a calibrated model, every promise looks the same." },
-            { n: "03", t: "No way to prove it worked", d: "Recovery rate went up — but would it have gone up anyway? Without a control group, you're measuring noise." },
-          ].map((p) => (
-            <div key={p.n} className="rounded-2xl border border-border bg-surface/60 p-5">
-              <div className="font-mono-tabular text-xs text-text-faint">{p.n}</div>
-              <div className="mt-2 text-sm font-semibold text-text">{p.t}</div>
-              <p className="mt-1.5 text-sm text-text-faint">{p.d}</p>
-            </div>
-          ))}
-        </section>
-      </FadeIn>
-
-      {/* Pipeline */}
-      <FadeIn>
-        <section>
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-accent-text">How it works</h2>
-          <p className="mb-6 max-w-2xl text-text-muted">
-            One event, one graph invocation, seven stages — orchestrated by LangGraph, with a feedback loop back
-            into the economics that drive the next decision.
-          </p>
-          <PipelineViz />
-        </section>
-      </FadeIn>
-
-      {/* Proof metrics */}
-      <FadeIn>
-        <section>
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-accent-text">Proof, not a pitch</h2>
-          <p className="mb-6 max-w-2xl text-text-muted">
-            Numbers below are fetched live from this deployment&rsquo;s own persisted decisions and attribution
-            experiment — not illustrative copy.
-          </p>
-          {proofMetrics ? (
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <ProofTile label="Live invoices scored" value={String(proofMetrics.nInvoices)} />
-              <ProofTile label="Engine recovery rate" value={formatPercent(proofMetrics.recoveryRate)} />
-              <ProofTile label="Net EV improvement vs. baseline" value={formatCurrency(proofMetrics.netImprovement)} accent />
-              <ProofTile
-                label="Measured incremental recovery"
-                value={proofMetrics.incrementalRecovery !== null ? formatPercent(proofMetrics.incrementalRecovery) : "pending"}
-                accent
-              />
-            </div>
-          ) : (
-            <p className="rounded-xl border border-dashed border-border-strong p-6 text-sm text-text-faint">
-              Live metrics are temporarily unavailable — visit <Link href="/metrics" className="text-accent-text hover:underline">the metrics screen</Link> directly once the backend responds.
-            </p>
-          )}
-        </section>
-      </FadeIn>
-
-      {/* Key decisions */}
-      <FadeIn>
-        <section>
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-accent-text">Key design decisions</h2>
-          <p className="mb-6 max-w-2xl text-text-muted">
-            The choices that mattered more than the model architecture.
-          </p>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {KEY_DECISIONS.map((d) => (
-              <div key={d.title} className="rounded-2xl border border-border bg-surface/60 p-5">
-                <div className="text-sm font-semibold text-text">{d.title}</div>
-                <p className="mt-1.5 text-sm leading-relaxed text-text-faint">{d.body}</p>
-              </div>
+        <section className="relative">
+          <div aria-hidden className="section-glow" style={{ "--glow-x": "10%" } as CSSProperties} />
+          <h2 className="section-heading mb-6">The problem</h2>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {PROBLEMS.map((p) => (
+              <ProblemCard key={p.n} {...p} />
             ))}
           </div>
         </section>
       </FadeIn>
 
-      {/* CTA */}
+      {/* ================= Pipeline ================= */}
       <FadeIn>
-        <section className="rounded-3xl border border-accent/25 bg-accent-soft/40 p-8 text-center sm:p-12">
-          <h2 className="text-2xl font-semibold text-text">See it decide, in real time.</h2>
-          <p className="mx-auto mt-2 max-w-xl text-sm text-text-muted">
-            Open the console, pick a curated demo invoice, and walk the full trace — root cause, recoverability
-            score, candidate-action economics, retrieved cases, policy check, and the timeline that resulted.
+        <section>
+          <h2 className="section-heading mb-3">How it works</h2>
+          <p className="mb-4 max-w-2xl text-text-muted">
+            One event, one graph invocation, seven stages — orchestrated by LangGraph. Scroll to see the flow.
           </p>
-          <div className="mt-6 flex justify-center">
+          <PipelineViz />
+        </section>
+      </FadeIn>
+
+      {/* ================= Proof metrics ================= */}
+      <FadeIn>
+        <section>
+          <h2 className="section-heading mb-3">Proof, not a pitch</h2>
+          <p className="mb-6 max-w-2xl text-text-muted">
+            Fetched live from this deployment&rsquo;s own persisted decisions and attribution experiment —
+            not illustrative copy.
+          </p>
+          {proofMetrics ? (
+            <div className="grid gap-4 lg:grid-cols-5">
+              <div className="grid-lines relative h-full overflow-hidden rounded-panel border border-border lg:col-span-3">
+                <div className="grid h-full grid-cols-2 divide-x divide-y divide-border">
+                  <ProofTile label="Live invoices scored" value={String(proofMetrics.nInvoices)} />
+                  <ProofTile label="Engine recovery rate" value={formatPercent(proofMetrics.recoveryRate)} />
+                  <ProofTile label="Net EV improvement" value={formatCurrency(proofMetrics.netImprovement)} accent />
+                  <ProofTile
+                    label="Channels with positive lift"
+                    value={`${proofMetrics.positiveChannels} / ${proofMetrics.totalChannels}`}
+                    accent
+                  />
+                </div>
+              </div>
+              <div className="flex h-full flex-col rounded-panel border border-border bg-surface/60 p-5 lg:col-span-2">
+                <div className="label mb-2 text-text-faint">Measured lift — positive channels</div>
+                <div className="flex flex-1 items-center">
+                  <ChannelLiftChart data={proofMetrics.channelLifts} />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="rounded-card border border-dashed border-border-strong p-6 text-sm text-text-faint">
+              Live metrics are temporarily unavailable — visit{" "}
+              <Link href="/metrics" className="text-accent-text hover:underline">
+                the metrics screen
+              </Link>{" "}
+              directly once the backend responds.
+            </p>
+          )}
+          <p className="mt-3 text-xs text-text-faint">
+            One channel (Escalate) shows a measured negative lift on a small sample — shown above, not
+            hidden. Full breakdown on the{" "}
+            <Link href="/metrics" className="text-accent-text hover:underline">
+              metrics page
+            </Link>
+            .
+          </p>
+        </section>
+      </FadeIn>
+
+      {/* ================= Key decisions — icon grid, its own design language ================= */}
+      <FadeIn>
+        <section className="relative">
+          <div aria-hidden className="section-glow" style={{ "--glow-x": "85%" } as CSSProperties} />
+          <h2 className="section-heading mb-3">Key design decisions</h2>
+          <p className="mb-6 max-w-2xl text-text-muted">
+            The choices that mattered more than the model architecture.
+          </p>
+          <KeyDecisions />
+        </section>
+      </FadeIn>
+
+      {/* ================= CTA ================= */}
+      <FadeIn>
+        <section className="grid-lines relative overflow-hidden rounded-panel border border-accent/25 bg-accent-soft/40 p-8 sm:p-14">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="text-2xl font-semibold text-text sm:text-3xl">See it decide, in real time.</h2>
+            <p className="mx-auto mt-2 max-w-xl text-sm text-text-muted">
+              Open the console, pick a curated example, and walk the full trace end to end.
+            </p>
+          </div>
+
+          <div className="mx-auto mt-8 flex max-w-3xl flex-wrap items-center justify-center gap-3">
+            {WALKTHROUGH.map((step, i) => (
+              <div key={step.label} className="flex items-center gap-3">
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-surface/70 px-3.5 py-2">
+                  <step.icon size={14} className="text-accent-text" />
+                  <span className="text-xs font-medium text-text-muted">{step.label}</span>
+                </div>
+                {i < WALKTHROUGH.length - 1 && <span className="text-text-faint">→</span>}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-8 flex justify-center">
             <Link
               href="/invoices"
-              className="rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white shadow-elevated hover:bg-accent-hover transition-colors"
+              className="rounded-lg bg-accent px-6 py-3 text-sm font-semibold text-white shadow-accent transition-transform active:scale-[0.98]"
             >
               Open Console →
             </Link>
@@ -167,11 +251,45 @@ export default async function LandingPage() {
   );
 }
 
+function StatBlock({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="spotlight rounded-card border border-border bg-surface/70 p-4 transition-colors hover:border-accent/40">
+      <div className="label">{label}</div>
+      <div className="mt-1.5 font-mono-tabular text-xl font-semibold text-accent-text sm:text-2xl">{value}</div>
+    </div>
+  );
+}
+
+function ProblemCard({
+  n,
+  t,
+  d,
+  visual,
+}: {
+  n: string;
+  t: string;
+  d: string;
+  visual: ReactNode;
+}) {
+  return (
+    <div className="spotlight flex flex-col rounded-card border border-border bg-surface/60 p-5 sm:p-6">
+      <div className="flex items-center justify-between">
+        <span className="label text-text-faint">{n}</span>
+      </div>
+      <div className="flex flex-1 items-center justify-center">{visual}</div>
+      <div>
+        <div className="font-display text-base font-semibold text-text">{t}</div>
+        <p className="mt-2 text-sm text-text-faint">{d}</p>
+      </div>
+    </div>
+  );
+}
+
 function ProofTile({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="rounded-xl border border-border bg-surface-2/60 p-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-text-muted">{label}</div>
-      <div className={`mt-1.5 text-2xl font-semibold font-mono-tabular ${accent ? "text-accent-text" : "text-text"}`}>
+    <div className="flex flex-col justify-center p-5 sm:p-6">
+      <div className="label">{label}</div>
+      <div className={`mt-2 font-mono-tabular text-2xl font-semibold sm:text-3xl ${accent ? "text-accent-text" : "text-text"}`}>
         {value}
       </div>
     </div>
