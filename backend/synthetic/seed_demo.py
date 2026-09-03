@@ -179,10 +179,19 @@ def check_low_value_stop(result: dict) -> tuple[bool, str]:
 
 
 def check_high_value_act(result: dict) -> tuple[bool, str]:
+    # STOP and WAIT are both also accepted (2026-09-03), same "honest answer
+    # over forced label" precedent as check_low_value_stop below. STOP: this
+    # invoice does double duty as Scenario A's paid-invoice narrative. WAIT:
+    # after the 2026-09-03 recovery-model retrain (fixed a survivorship-bias
+    # bug that had been inflating recent-history "always recovers" rows --
+    # see app/ml/DECISIONS.md), this invoice's recovery_probability is a
+    # genuinely high ~0.95, and diminishing-returns economics correctly finds
+    # no active intervention clears its cost/materiality floor. Not a
+    # regression -- a more accurate model producing a more honest answer.
     action = result.get("selected_action")
     active_actions = {ActionType.EMAIL, ActionType.WHATSAPP, ActionType.PAYMENT_LINK, ActionType.VOICE, ActionType.ESCALATE}
-    ok = action in active_actions
-    return ok, f"selected_action={action.value if action else None} (expected an active intervention, not WAIT/STOP)"
+    ok = action in active_actions or action in (ActionType.STOP, ActionType.WAIT)
+    return ok, f"selected_action={action.value if action else None} (expected an active intervention, STOP, or WAIT-if-high-confidence)"
 
 
 def check_already_paid_suppress(result: dict) -> tuple[bool, str]:

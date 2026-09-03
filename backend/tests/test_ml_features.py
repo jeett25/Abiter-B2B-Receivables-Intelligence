@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from app.core.db import engine
 from app.ml.features import (
+    ATTRIBUTION_SIMULATED_PAYMENT_METHOD,
     build_feature_table,
     build_live_feature_table,
     invoice_static_features,
@@ -15,7 +16,7 @@ from app.ml.features import (
     prior_resolved_invoices,
     rolling_features,
 )
-from app.models import Invoice
+from app.models import Invoice, Payment
 from app.models.enums import InvoiceStatus
 
 
@@ -230,10 +231,22 @@ def test_live_sibling_grouping_includes_earlier_issued_excludes_later_issued():
 
 
 def test_build_feature_table_row_count_matches_historical_invoice_count(db_session):
+    """Excludes invoices resolved via Day 5's attribution write-back
+    (method=ATTRIBUTION_SIMULATED_PAYMENT_METHOD) -- only ever flips a
+    formerly-live invoice to PAID when it recovered, so counting those as
+    organic history would collapse the population to 100% positive. See
+    app/ml/features.py's organic_historical_mask()."""
+    attribution_simulated_ids = db_session.execute(
+        select(Payment.invoice_id).where(Payment.method == ATTRIBUTION_SIMULATED_PAYMENT_METHOD)
+    ).scalars().all()
+
     historical_count = db_session.execute(
         select(func.count())
         .select_from(Invoice)
-        .where(Invoice.status.in_([InvoiceStatus.PAID, InvoiceStatus.WRITTEN_OFF]))
+        .where(
+            Invoice.status.in_([InvoiceStatus.PAID, InvoiceStatus.WRITTEN_OFF]),
+            Invoice.id.notin_(attribution_simulated_ids),
+        )
     ).scalar_one()
 
     table = build_feature_table(engine)

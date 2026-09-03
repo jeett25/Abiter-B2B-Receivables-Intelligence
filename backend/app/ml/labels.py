@@ -10,10 +10,10 @@ from app.ml.config import (
     HORIZON_DAYS,
 )
 from app.ml.features import (
-    HISTORICAL_STATUSES,
     build_feature_table,
     invoice_static_features,
     load_raw_tables,
+    organic_historical_mask,
     prior_issued_invoices,
     prior_resolved_invoices,
     rolling_features,
@@ -73,9 +73,10 @@ def resolution_delay_curve(engine: Engine | None = None) -> dict:
     horizon H -- not just delay-distribution among paid invoices."""
     tables = load_raw_tables(engine)
     invoices = tables["invoices"]
+    payments = tables["payments"]
     customers = tables["customers"][["id", "archetype"]].rename(columns={"id": "customer_id"})
 
-    hist = invoices[invoices["status"].isin(HISTORICAL_STATUSES)].merge(customers, on="customer_id", how="left")
+    hist = invoices[organic_historical_mask(invoices, payments)].merge(customers, on="customer_id", how="left")
     hist["delay_days"] = (hist["paid_at"] - hist["due_date"]).dt.days
 
     result = {"pooled": _curve_for_group(hist)}
@@ -220,7 +221,7 @@ def build_ptp_table(engine: Engine | None = None) -> pd.DataFrame:
     promises_all = tables["promises"]
     actions = tables["actions"]
 
-    historical = invoices[invoices["status"].isin(HISTORICAL_STATUSES)]
+    historical = invoices[organic_historical_mask(invoices, payments)]
     historical_indexed = historical.set_index("id", drop=False)
     by_customer = {cid: group for cid, group in historical.groupby("customer_id")}
 

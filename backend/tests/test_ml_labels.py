@@ -73,7 +73,7 @@ def test_build_ptp_table_excludes_non_terminal_promises_and_confidence_score():
                   "relationship_start_date": pd.Timestamp("2023-01-01")}]
             ),
             "merchants": pd.DataFrame([{"id": "merch-1", "segment": "enterprise", "industry": "saas"}]),
-            "payments": pd.DataFrame(columns=["invoice_id", "amount", "payment_date"]),
+            "payments": pd.DataFrame(columns=["invoice_id", "amount", "payment_date", "method"]),
             "promises": promises,
             "actions": actions,
         }

@@ -12,6 +12,32 @@ from app.models.enums import ActionType, InvoiceStatus, PromiseStatus
 
 HISTORICAL_STATUSES = {InvoiceStatus.PAID.value, InvoiceStatus.WRITTEN_OFF.value}
 
+# app/attribution/simulate_outcomes.py's ledger write-back only ever flips a
+# formerly-live invoice to PAID when its simulated outcome was recovered=True
+# -- never-recovered ones stay OPEN forever. Once Day 5's attribution
+# experiment has run, naively filtering training population by status alone
+# (HISTORICAL_STATUSES) silently pulls in this outcome-filtered subset as if
+# it were organic history, collapsing the most recent time slice to 100%
+# positive (survivorship bias, not a real signal). This mirrors
+# attribution/DECISIONS.md's already-documented "deterministic given the same
+# seed" caveat -- population identity matters -- just for a different mutation.
+ATTRIBUTION_SIMULATED_PAYMENT_METHOD = "attribution_simulation"
+
+
+def organic_historical_mask(invoices: pd.DataFrame, payments: pd.DataFrame) -> pd.Series:
+    """HISTORICAL_STATUSES membership, minus any invoice resolved via Day 5's
+    attribution write-back rather than organic generation/collection. Use this
+    (not a bare status filter) for any TRAINING population -- the row being
+    predicted must never be drawn from a population pre-filtered by its own
+    outcome. Safe to keep using is_resolved_before()/prior_resolved_invoices()
+    unfiltered elsewhere: attribution-simulated resolutions are real facts
+    once they've happened, valid as *prior-history context* for a different
+    invoice -- only invalid as the labeled training row itself."""
+    simulated_ids = set(
+        payments.loc[payments["method"] == ATTRIBUTION_SIMULATED_PAYMENT_METHOD, "invoice_id"]
+    )
+    return invoices["status"].isin(HISTORICAL_STATUSES) & ~invoices["id"].isin(simulated_ids)
+
 RECENT_90D_DAYS, RECENT_180D_DAYS = RECENCY_WINDOWS_DAYS
 
 
@@ -260,7 +286,7 @@ def build_feature_table(engine: Engine | None = None) -> pd.DataFrame:
     promises = tables["promises"]
     actions = tables["actions"]
 
-    historical = invoices[invoices["status"].isin(HISTORICAL_STATUSES)]
+    historical = invoices[organic_historical_mask(invoices, payments)]
 
     rows = []
     for customer_id, group in historical.groupby("customer_id"):
