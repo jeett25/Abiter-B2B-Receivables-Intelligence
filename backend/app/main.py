@@ -16,11 +16,13 @@ app = FastAPI(
     description="Read-only dashboard API over invoices/account_state/decision_logs/attribution_records.",
 )
 
-# Local Next.js dev server only for now -- add the deployed frontend origin
-# once Day 6 deploys it.
+# Local Next.js dev server + the deployed Vercel frontend (Day 6, subtask 16).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://arbiter-brown-five.vercel.app",
+    ],
     allow_methods=["GET"],
     allow_headers=["*"],
 )
