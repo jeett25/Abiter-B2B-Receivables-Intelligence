@@ -83,7 +83,7 @@ export default function AttributionCompareChart({ headline }: { headline: Attrib
       </div>
       <div className={`grid gap-6 ${hasCountData ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
         <MiniBarPanel
-          title="Recovery rate (₹-weighted)"
+          title="Recovery rate (weighted by invoice size)"
           data={rateData}
           tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
           tooltipFormatter={(v) => formatPercent(v)}

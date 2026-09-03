@@ -44,6 +44,28 @@ def test_get_decision_returns_real_decision_log_fields(db_session):
     assert body["reason"]
 
 
+def test_get_decision_falls_back_to_prior_assessment_for_a_bare_closing_entry(db_session):
+    """A recovered invoice's LATEST decision_logs row is a bare closing
+    entry (build_closing_decision_log() -- model_scores explicitly None,
+    honest about not being a fresh assessment). Without the fallback in
+    get_decision(), the Invoice Detail page's predictive/economics/
+    retrieval panels go empty for every one of these -- confirms the merge
+    instead surfaces the real prior assessment's scores, while still
+    reporting the closing entry's own decision/reason as the top-line
+    answer (never overwritten by the older row)."""
+    invoice_id = _pick_recovered_invoice(db_session)
+    resp = client.get(f"/api/invoices/{invoice_id}/decision")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["decision"] == "stop"
+    assert "randomized control-group experiment" in body["reason"]
+    assert body["assessed_at"] is not None
+    assert body["assessed_at"] != body["timestamp"]
+    assert body["model_scores"]["recovery_probability"] is not None
+    assert len(body["evidence"].get("retrieved_cases", [])) > 0
+
+
 def test_get_decision_404_for_never_scored_invoice(db_session):
     invoice_id = _pick_never_scored_invoice(db_session)
     resp = client.get(f"/api/invoices/{invoice_id}/decision")

@@ -1,7 +1,7 @@
 {
   "reliable_payer_wait": {
-    "invoice_number": "INV-10330",
-    "expected_action": "wait"
+    "invoice_number": "INV-10765",
+    "expected_action": "stop"
   },
   "chronic_late_escalate": {
     "invoice_number": "INV-10184",

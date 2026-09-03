@@ -4,7 +4,7 @@ this script's entire purpose is keeping the 6 demo fixtures healthy, so
 running its reset+check logic as part of the test suite is itself a
 continuous verification that the demo still works, not an unwanted
 mutation to avoid."""
-from synthetic.seed_demo import FIXTURE_CHECKS, _load_fixtures, reset_and_reassess, seed_demo
+from synthetic.seed_demo import FIXTURE_CHECKS, _load_fixtures, reset_and_reassess, seed_demo, verify_reliable_payer_wait
 
 
 def test_fixture_checks_cover_every_fixture_in_demo_fixtures_json():
@@ -12,9 +12,13 @@ def test_fixture_checks_cover_every_fixture_in_demo_fixtures_json():
     assert set(FIXTURE_CHECKS.keys()) == set(fixtures.keys())
 
 
-def test_reset_and_reassess_reliable_payer_wait_passes_its_own_check(db_session):
+def test_verify_reliable_payer_wait_passes_its_own_check(db_session):
+    # Not reset_and_reassess() -- see verify_reliable_payer_wait()'s
+    # docstring for why this one fixture is read-only, not reset+reassessed
+    # like the other 5 (its real attribution-simulation payment and
+    # decision_logs history ARE the evidence, not something to reproduce).
     fixtures = _load_fixtures()
-    result = reset_and_reassess(fixtures["reliable_payer_wait"]["invoice_number"])
+    result = verify_reliable_payer_wait(fixtures["reliable_payer_wait"]["invoice_number"])
     passed, detail = FIXTURE_CHECKS["reliable_payer_wait"](result)
     assert passed, detail
 

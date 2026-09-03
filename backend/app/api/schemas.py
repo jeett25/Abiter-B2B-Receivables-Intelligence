@@ -42,6 +42,13 @@ class DecisionTrace(BaseModel):
     policy_checks: dict[str, Any]
     reason: str
     timestamp: datetime
+    # Set only when model_scores/evidence above were pulled from an EARLIER
+    # decision_logs row than `timestamp` -- see get_decision()'s fallback
+    # merge for invoices whose latest row is a bare closing entry (e.g.
+    # app/attribution/persist.py's build_closing_decision_log(), which
+    # deliberately has no fresh model_scores of its own). None means
+    # model_scores/evidence are from the same row as decision/reason/timestamp.
+    assessed_at: datetime | None = None
 
 
 class TimelineEntry(BaseModel):

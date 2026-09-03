@@ -25,7 +25,18 @@ SCENARIOS: dict[str, dict] = {
     "reliable_payer_wait": {
         "archetypes": ["reliable_payer"],
         "order": "amount_asc",
-        "expected_action": "wait",
+        # NOTE (2026-09-03): demo_fixtures.json's actual pinned invoice for
+        # this key was manually overridden to INV-10765, NOT re-derived from
+        # this scenario's own selection criteria -- see CLAUDE.md and
+        # synthetic/seed_demo.py's verify_reliable_payer_wait(). INV-10765 is
+        # a real (formerly-live, Day-5-attribution-control-arm) invoice that
+        # organically recovered with zero intervention -- concrete proof a
+        # WAIT decision was correct, stronger than any still-open invoice
+        # this query could select. Re-running select_demo_fixtures() would
+        # silently discard that override and re-pin an ordinary open
+        # invoice; don't run it for this key without updating this comment
+        # and seed_demo.py's special-casing together.
+        "expected_action": "stop",
     },
     "chronic_late_escalate": {
         "archetypes": ["chronic_late"],

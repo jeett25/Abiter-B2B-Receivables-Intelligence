@@ -329,7 +329,14 @@ def dispatch_action(state: GraphState) -> dict:
         "tool_result": result,
         "retry_count": attempts - 1,
         "selected_action": ActionType.WAIT,
-        "error": f"{action.value} failed after {attempts} attempt(s): {result['message']}",
+        # Deliberately generic (2026-09-03) -- this becomes decision_logs.reason,
+        # rendered as-is on "Why this decision?"/Policy Gate/Timeline, so it
+        # must never carry a raw vendor error string (e.g. a real Razorpay
+        # API exception message) as the PRIMARY sentence. The raw
+        # result["message"] is still fully available via tool_result on
+        # policy_checks -- the frontend shows it, de-emphasized, in Safety &
+        # Failure Handling. Never lost, just not the headline.
+        "error": f"{action.value} failed after {attempts} attempt(s), fell back to wait",
     }
 
 

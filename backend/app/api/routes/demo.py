@@ -41,10 +41,61 @@ _LABELS = {
     "low_value_stop": "Low value (correct abstention)",
 }
 
+# 2026-09-03: added after a real gap was found -- the menu label alone gives
+# no context once you've clicked through to the Invoice Detail page itself,
+# so a first-time viewer (a recruiter, not someone who's read the source)
+# has no way to tell "the voice call failed" apart from an actual bug, or
+# realize a WAIT decision was independently validated by a real outcome.
+# Written for that reader specifically: plain language, states what's being
+# demonstrated AND why it's a deliberate, meaningful example, not a random
+# invoice. Kept in this same file as _LABELS (one source of truth for both,
+# no drift risk) rather than duplicated in the frontend.
+_EXPLANATIONS = {
+    "reliable_payer_wait": (
+        "This customer was assigned to the untreated control group of the randomized holdout "
+        "experiment -- no email, call, or reminder was ever sent. The engine's own decision, before "
+        "any outcome was known, was WAIT with 99% predicted confidence. The invoice was paid in full "
+        "anyway, with zero intervention: real, measured proof the abstention was correct, not just a "
+        "plausible-sounding one."
+    ),
+    "chronic_late_escalate": (
+        "This invoice's real, economically-justified action is VOICE. To prove the system doesn't "
+        "panic or improvise when a tool call fails, this run deliberately forces the voice-call API "
+        "to fail. Watch it retry, exhaust its retries, and safely fall back to WAIT -- recording the "
+        "failure honestly instead of guessing a different channel. This is the resilience design "
+        "working as intended, not a bug."
+    ),
+    "promise_breaker_reassess": (
+        "A real (simulated) customer WhatsApp message is sent, a live LLM call extracts a payment "
+        "promise from it, and once that promise is confirmed broken, the system automatically "
+        "reassesses and produces a fresh decision -- demonstrating the event-driven reassessment "
+        "loop, not a one-shot script. Because it calls a live LLM, the exact outcome can vary "
+        "slightly run to run."
+    ),
+    "low_value_stop": (
+        "Even for a customer archetype with weaker payment history, this invoice is small enough "
+        "that most interventions would cost more than there is to recover. The engine picks the "
+        "cheapest available nudge (or nothing) instead of over-spending to chase a small amount -- "
+        "the same abstention discipline as the reliable-payer case above, for a different reason."
+    ),
+    "high_value_act": (
+        "A high-value invoice from a higher-risk customer -- worth real effort, unlike the abstention "
+        "cases above. This scenario also manually injects a payment-received event to demonstrate the "
+        "account correctly closing out once money actually arrives."
+    ),
+    "already_paid_suppress": (
+        "A real payment already exists for this invoice, but its status field hasn't been reconciled "
+        "yet -- a common real-world lag. The Policy Gate checks the actual payment ledger directly, "
+        "never just the status flag, and correctly stops any further contact rather than chasing "
+        "someone who's already paid."
+    ),
+}
+
 
 class DemoFixtureOut(BaseModel):
     key: str
     label: str
+    explanation: str
     invoice_number: str
     invoice_id: UUID
     expected_action: str
@@ -70,6 +121,7 @@ def list_demo_fixtures(db: Annotated[Session, Depends(get_db)]):
             DemoFixtureOut(
                 key=key,
                 label=_LABELS.get(key, key),
+                explanation=_EXPLANATIONS.get(key, ""),
                 invoice_number=invoice_number,
                 invoice_id=invoice_id,
                 expected_action=fixture["expected_action"],

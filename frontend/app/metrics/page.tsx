@@ -141,7 +141,7 @@ export default async function MetricsPage() {
       </section>
 
       <section id="experiment" className="scroll-mt-24 space-y-4">
-        <h2 className="section-heading">Randomized holdout attribution ({attribution.experiment_id})</h2>
+        <h2 className="section-heading">Randomized holdout attribution</h2>
         {metrics.attribution === null ? (
           <Card className="p-6">
             <p className="text-sm text-text-muted">Attribution experiment results are not available yet.</p>
@@ -150,7 +150,7 @@ export default async function MetricsPage() {
           <>
             <div className="space-y-5">
               <div>
-                <div className="label mb-2.5 !text-text-faint">By recovered amount (₹-weighted)</div>
+                <div className="label mb-2.5 !text-text-faint">By recovered amount (weighted by invoice size)</div>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                   <IconStat icon={Target} label="Treatment recovery" value={formatPercent(metrics.attribution.treatment_recovery_rate)} tone="neutral" />
                   <IconStat icon={Target} label="Control recovery" value={formatPercent(metrics.attribution.control_recovery_rate)} tone="neutral" />

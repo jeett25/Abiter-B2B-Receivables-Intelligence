@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, MinusCircle } from "lucide-react";
 import { RetrievedCase } from "@/lib/types";
 import { Badge } from "@/lib/ui";
 
@@ -17,7 +17,16 @@ export default function SimilarCasesCard({ cases }: { cases: RetrievedCase[] }) 
   const visible = cases.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   if (cases.length === 0) {
-    return <p className="text-sm text-text-muted">No comparable cases retrieved.</p>;
+    // Same icon + centered-block treatment as page.tsx's EmptyPanel (this
+    // is a client component, so duplicated rather than cross-imported from
+    // a server-component page file) -- an empty card should read as
+    // deliberate, not broken.
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+        <MinusCircle size={20} className="text-text-faint" />
+        <p className="text-sm text-text-muted">No comparable cases retrieved for this round.</p>
+      </div>
+    );
   }
 
   return (

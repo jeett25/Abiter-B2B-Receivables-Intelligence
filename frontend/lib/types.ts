@@ -155,6 +155,13 @@ export interface DecisionTrace {
   policy_checks: PolicyChecks;
   reason: string;
   timestamp: string;
+  // Set only when model_scores/evidence above were pulled from an earlier
+  // decision_logs row than `timestamp` -- see app/api/routes/decisions.py's
+  // get_decision() fallback merge for invoices whose latest row is a bare
+  // closing entry (no fresh model_scores of its own, e.g. resolved via the
+  // attribution experiment's write-back). Undefined/null means
+  // model_scores/evidence are from the same round as decision/reason.
+  assessed_at?: string | null;
 }
 
 // app/api/schemas.py::TimelineEntry
@@ -296,6 +303,11 @@ export interface AttributionResponse {
 export interface DemoFixture {
   key: string;
   label: string;
+  // Plain-English "what this demonstrates and why" -- shown as a banner on
+  // the Invoice Detail page when a viewer lands on this invoice, so the
+  // point of a staged/curated scenario (e.g. a deliberately forced tool
+  // failure) isn't lost once you've clicked past the menu label.
+  explanation: string;
   invoice_number: string;
   invoice_id: string;
   expected_action: string;

@@ -36,7 +36,13 @@ def build_attribution_record(outcome: SimulatedOutcome) -> AttributionRecord:
 # Marker substring, checked by the retroactive backfill script
 # (backfill_closing_decision_logs.py) to stay idempotent -- safe to rerun
 # without ever creating a second closing entry for the same invoice.
-CLOSING_ENTRY_MARKER = "Day-5 attribution experiment's randomized-holdout simulation"
+# Deliberately generic (2026-09-03: dropped "Day-5", an internal project-
+# timeline reference meaningless to anyone reading the UI without repo
+# context) -- describes the real mechanism (a randomized control-group
+# test) without naming an internal build-day. Any existing decision_logs
+# rows written with the old "Day-5..." marker were updated in place to this
+# text at the same time, so the idempotency check keeps matching them too.
+CLOSING_ENTRY_MARKER = "randomized control-group experiment"
 
 
 def build_closing_decision_log(invoice_id, payment_date: date, session) -> DecisionLog:
@@ -78,7 +84,7 @@ def build_closing_decision_log(invoice_id, payment_date: date, session) -> Decis
             "state_transition_path": [AccountCurrentState.CLOSED_PAID.value],
         },
         reason=(
-            f"Invoice recovered via the {CLOSING_ENTRY_MARKER}, not a fresh decision-engine "
+            f"Invoice recovered as part of a {CLOSING_ENTRY_MARKER}, not a fresh decision-engine "
             "assessment -- the entries above reflect the last real decision made before this "
             "payment was recorded."
         ),

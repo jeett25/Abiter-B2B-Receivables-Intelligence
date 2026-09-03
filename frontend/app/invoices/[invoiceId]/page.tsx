@@ -1,12 +1,26 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AlarmClock, AlertTriangle, ArrowLeft, CheckCircle2, Clock, MinusCircle, Scale, ShieldQuestion, Wallet, XCircle } from "lucide-react";
+import {
+  AlarmClock,
+  AlertTriangle,
+  ArrowLeft,
+  CheckCircle2,
+  Clock,
+  Gavel,
+  MinusCircle,
+  Receipt,
+  Scale,
+  ShieldQuestion,
+  Wallet,
+  XCircle,
+} from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
-import { ApiError, getDecision, getInvoice, getTimeline } from "@/lib/api";
-import { ActionEV, DecisionTrace, InvoiceSummary, InvoiceTimeline } from "@/lib/types";
+import { ApiError, getDecision, getDemoFixtures, getInvoice, getTimeline } from "@/lib/api";
+import { ActionEV, DecisionTrace, DemoFixture, InvoiceSummary, InvoiceTimeline } from "@/lib/types";
 import { ActionBadge, Badge, Card, ErrorPanel, PolicyBadge, StateBadge, formatCurrency, formatPercent } from "@/lib/ui";
 import RefreshButton from "../../RefreshButton";
 import RadialGauge from "../../RadialGauge";
+import DemoScenarioBanner from "./DemoScenarioBanner";
 import SimilarCasesCard from "./SimilarCasesCard";
 
 // Second redesign pass (2026-09-02): consolidated the hero into one line,
@@ -94,9 +108,21 @@ export default async function DecisionTracePage({
   const overdue = daysOverdue(invoice.due_date);
   const hasAnyGauge = trace.model_scores.recovery_probability !== null || trace.model_scores.ptp_probability !== null;
 
+  // Same graceful-degradation precedent as layout.tsx's own getDemoFixtures()
+  // call -- this banner is a nice-to-have, never worth breaking the whole
+  // page over a backend hiccup.
+  let demoFixture: DemoFixture | undefined;
+  try {
+    const fixtures = await getDemoFixtures();
+    demoFixture = fixtures.find((f) => f.invoice_id === invoiceId);
+  } catch {
+    demoFixture = undefined;
+  }
+
   return (
     <div className="space-y-5">
       <BackLink />
+      <DemoScenarioBanner fixture={demoFixture} />
 
       {/* ================= Hero -- restored to the stacked layout + jump-link
           nav (the "one line" version read badly; this keeps the Currency
@@ -159,6 +185,12 @@ export default async function DecisionTracePage({
             Chose <span className="text-accent-text">{trace.decision}</span>
           </p>
           <p className="mt-1.5 text-sm text-text-muted">{trace.reason}</p>
+          {trace.assessed_at && (
+            <p className="mt-2.5 border-t border-accent/20 pt-2.5 text-xs text-text-faint">
+              Predictive scores, action economics, and similar cases below are from the last live assessment,{" "}
+              {new Date(trace.assessed_at).toLocaleString("en-IN")} — made before this outcome was recorded.
+            </p>
+          )}
         </Card>
 
         <Card className="p-5 sm:p-6">
@@ -173,7 +205,7 @@ export default async function DecisionTracePage({
               )}
             </div>
           ) : (
-            <p className="py-6 text-center text-sm text-text-muted">No model score for this round.</p>
+            <EmptyPanel title="No predictive score recorded for this round." />
           )}
           <RootCauseRow rootCause={trace.model_scores.root_cause} isDisputed={trace.policy_checks.is_disputed} />
         </Card>
@@ -239,7 +271,7 @@ export default async function DecisionTracePage({
             {recommendedAction && <Badge tone="remind">Recommended: {recommendedAction}</Badge>}
           </div>
           {sortedCandidates.length === 0 ? (
-            <p className="text-sm text-text-muted">No candidate-action comparison for this round.</p>
+            <EmptyPanel title="No candidate-action comparison recorded for this round." />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[420px] border-collapse text-xs">
@@ -336,15 +368,21 @@ export default async function DecisionTracePage({
             <ol className="relative max-h-80 space-y-4 overflow-y-auto border-l border-border pl-4">
               {timeline.events.map((event, i) => {
                 const path = getStateTransitionPath(event.detail);
+                // Only worth showing when it's an ACTUAL multi-step
+                // transition (e.g. a real reassessment chain) -- a
+                // single-item path is just the decision word repeated
+                // right below itself.
+                const showPath = path && path.length > 1;
+                const EventIcon = event.type === "payment" ? Receipt : Gavel;
                 return (
                   <li key={i} className="relative text-xs">
                     <span className="absolute -left-[19px] top-1 h-2 w-2 rounded-full bg-accent ring-4 ring-bg" />
                     <div className="font-mono-tabular text-text-faint">{new Date(event.timestamp).toLocaleString("en-IN")}</div>
-                    <div className="mt-0.5 text-text">
-                      <span className="label mr-1 inline-block !text-[9px] text-text-muted">{event.type}</span>
-                      {event.summary}
+                    <div className="mt-0.5 flex items-start gap-1.5 text-text">
+                      <EventIcon size={12} className="mt-0.5 shrink-0 text-text-faint" aria-hidden />
+                      <span>{event.summary}</span>
                     </div>
-                    {path && <div className="mt-0.5 font-mono-tabular text-accent-text">{path.join(" → ")}</div>}
+                    {showPath && <div className="mt-0.5 font-mono-tabular text-accent-text">{path.join(" → ")}</div>}
                   </li>
                 );
               })}
@@ -352,6 +390,20 @@ export default async function DecisionTracePage({
           )}
         </Card>
       </div>
+    </div>
+  );
+}
+
+// Shared "nothing here, and that's expected" state -- an icon + a
+// deliberately centered, modest block reads as "the system correctly has
+// nothing to show" rather than a lonely sentence in an otherwise-empty
+// card, which reads as broken. Reuses MinusCircle, the same icon this page
+// already uses for RootCauseRow's own empty state, for visual consistency.
+function EmptyPanel({ title }: { title: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 py-8 text-center">
+      <MinusCircle size={20} className="text-text-faint" />
+      <p className="text-sm text-text-muted">{title}</p>
     </div>
   );
 }
@@ -564,12 +616,19 @@ function SafetyList({
   const retryCount = trace.policy_checks.retry_count;
   if (toolResult) {
     if (!toolResult.success) {
+      // Primary line is always a clean, generic sentence -- toolResult.message
+      // is a raw string from whatever failed (e.g. a real Razorpay API error),
+      // which can read as an alarming debug dump if it's the headline. Kept
+      // visible for transparency, just de-emphasized below instead.
       items.push(
         <Item key="tool-failed" tone="danger">
-          Tool call failed ({toolResult.action}): {toolResult.message}
-          {typeof retryCount === "number" && (
-            <> — retried {retryCount} time(s), then fell back to <strong>{selectedAction ?? "wait"}</strong>.</>
-          )}
+          <div>
+            Tool call failed ({toolResult.action})
+            {typeof retryCount === "number" && (
+              <> — retried {retryCount} time(s), then safely fell back to <strong>{selectedAction ?? "wait"}</strong>.</>
+            )}
+          </div>
+          {toolResult.message && <div className="mt-1 text-[11px] text-text-faint">{toolResult.message}</div>}
         </Item>
       );
     } else if (typeof retryCount === "number" && retryCount > 0) {

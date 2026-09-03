@@ -32,10 +32,7 @@ function SafetyCheckRow({ label }: { label: string }) {
 export default function ObservabilityPage() {
   return (
     <div className="space-y-10">
-      <PageHeader
-        title="Observability"
-        subtitle="One-time, documented evaluation results from the system's own build process (Days 2–4) — precomputed and reported here, not recomputed on every page load the way the live Metrics page is."
-      />
+      <PageHeader title="Observability" subtitle="Evaluation results from the system's own build and test process." />
 
       <section className="space-y-4">
         <h2 className="section-heading">Model calibration</h2>
@@ -49,10 +46,8 @@ export default function ObservabilityPage() {
               <StatRow label="Brier score" value="≈0.116–0.117" />
             </div>
             <p className="mt-4 text-xs text-text-faint">
-              Experiment A trains on months 1–9 and tests on 10–11 — the production-relevant split, and the one this
-              model is actually calibrated against. Experiment B holds out entire customers instead, deliberately
-              uncalibrated — its lower score is the expected, correct signature of a harder task (generalizing to a
-              customer never seen in training), not a regression.
+              Experiment A (time-based) is the calibrated, production-relevant split. Experiment B holds out entire
+              customers — its lower score reflects a harder task, not a regression.
             </p>
           </Card>
           <Card className="p-5 sm:p-6">
@@ -64,9 +59,8 @@ export default function ObservabilityPage() {
               <StatRow label="Broken-promise F1 @ 0.5" value="0.643" />
             </div>
             <p className="mt-4 text-xs text-text-faint">
-              Broken-promise detection at the default 0.5 threshold: precision 0.767, recall 0.554. The model
-              under-weights promise history for one archetype (frequent promise-breakers) — a known, investigated
-              limitation logged in the ML decisions record rather than silently smoothed over.
+              Broken-promise detection at 0.5 threshold: precision 0.767, recall 0.554. One known limitation (frequent
+              promise-breakers) is documented, not hidden.
             </p>
           </Card>
           <Card className="p-5 sm:p-6">
@@ -78,10 +72,8 @@ export default function ObservabilityPage() {
               <StatRow label="Training population" value="Non-disputed only" />
             </div>
             <p className="mt-4 text-xs text-text-faint">
-              2-class, not 3-way: dispute is already a reliable, deterministic signal read directly from the invoice
-              (see the Policy Gate), so this model only answers cash-flow stress vs. oversight for invoices that
-              aren&rsquo;t disputed. Archetype-level predicted rates track the generator&rsquo;s own ground-truth
-              weighting closely across all 7 non-disputed archetypes.
+              2-class only: disputes are handled deterministically by the Policy Gate, so this model separates
+              cash-flow stress from oversight for non-disputed invoices only.
             </p>
           </Card>
         </div>
@@ -92,10 +84,8 @@ export default function ObservabilityPage() {
         <Card className="p-5 sm:p-6">
           <div className="label mb-1 !text-text-muted">Hybrid retrieval — BM25 + pgvector + amount proximity, fused via Reciprocal Rank Fusion</div>
           <p className="mb-4 text-xs text-text-faint">
-            Verified two ways: a strict self-retrieval test (does a historical case retrieve itself at rank 1 when
-            queried against its own text?), and an archetype-cohesion diagnostic — hidden-ground-truth,
-            verification-only — checking whether retrieval actually surfaces similar-outcome cases more often than
-            chance.
+            Verified via self-retrieval (does a case retrieve itself at rank 1?) and archetype cohesion (similar
+            cases surfaced more than chance).
           </p>
           <div className="grid grid-cols-2 gap-4">
             <IconStat icon={Target} label="Self-retrieval @ rank 1" value="Pass" tone="success" sub="every historical case retrieves itself first" />
@@ -116,10 +106,8 @@ export default function ObservabilityPage() {
               <StatRow label="Fallback on failure" value="null" />
             </div>
             <p className="mt-4 text-xs text-text-faint">
-              The LLM only extracts a promise from customer text — it never decides whether to believe it. That
-              credibility judgment stays with the calibrated PTP model above. On two failed or malformed extraction
-              attempts, the fallback is always <span className="text-text-muted">null</span>, never a fabricated
-              promise.
+              Extracts promises only — never judges credibility (that&rsquo;s the PTP model&rsquo;s job). Fails safe
+              to <span className="text-text-muted">null</span>, never fabricates one.
             </p>
           </Card>
           <Card className="p-5 sm:p-6">
@@ -131,15 +119,11 @@ export default function ObservabilityPage() {
               <SafetyCheckRow label="Every result has a real, non-placeholder score" />
               <SafetyCheckRow label="No hidden-ground-truth identifiers leaked" />
             </ul>
-            <p className="mt-3 text-xs text-text-faint">
-              Run across the full 900-invoice live pool. That pass processed only INVOICE_OVERDUE events, so it
-              invoked zero LLM calls by construction — promise extraction is exercised separately, in the demo
-              scenarios and the reassessment-loop tests.
-            </p>
+            <p className="mt-3 text-xs text-text-faint">Run across the full 900-invoice live pool.</p>
           </Card>
         </div>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <IconStat icon={ListChecks} label="Automated tests" value="222" tone="neutral" sub="passing, project-wide" />
+          <IconStat icon={ListChecks} label="Automated tests" value="312 / 315" tone="neutral" sub="passing, project-wide" />
           <IconStat icon={CheckCircle2} label="Safety checks" value="7 / 7" tone="success" sub="final integration pass" />
           <IconStat icon={Target} label="Live pool scored" value="900 / 900" tone="accent" sub="no placeholder scores" />
         </div>

@@ -27,8 +27,18 @@ from app.models import Invoice
 FIXTURES_PATH = Path(__file__).parent.parent / "synthetic" / "demo_fixtures.json"
 FIXTURES = json.loads(FIXTURES_PATH.read_text())
 
+# reliable_payer_wait excluded (2026-09-03): re-pinned to INV-10765, a real
+# invoice that's genuinely CLOSED_PAID (not the deliberately-still-"open"
+# already_paid_suppress mismatch) -- see synthetic/seed_demo.py's
+# verify_reliable_payer_wait() docstring. decide()/run_invoice() both build
+# their feature row from build_live_feature_table(), which filters to
+# status==OPEN only, so this invoice simply isn't eligible for a fresh
+# decision at all anymore -- decide() raises IndexError, not a decision
+# disagreement. Nothing left for this parity test to check for this fixture.
+DECIDABLE_FIXTURES = [k for k in FIXTURES if k != "reliable_payer_wait"]
 
-@pytest.mark.parametrize("scenario_key", list(FIXTURES.keys()))
+
+@pytest.mark.parametrize("scenario_key", DECIDABLE_FIXTURES)
 def test_graph_matches_direct_decision_for_demo_fixture(scenario_key, db_session):
     invoice_number = FIXTURES[scenario_key]["invoice_number"]
     invoice_id = db_session.execute(
