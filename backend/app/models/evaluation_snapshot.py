@@ -13,7 +13,7 @@ class EvaluationSnapshot(Base):
     account_state: it holds the LATEST precomputed baseline-vs-engine
     comparison, not an append-only history.
 
-    Why this table exists (Day 6 bug, see app/api/DECISIONS.md): GET
+    Why this table exists (Day 6 bug, see docs/api-DECISIONS.md): GET
     /api/metrics used to derive this comparison at request time from
     persisted account_state.next_action/recoverability_score across every
     invoice ever scored -- including ones a later mutation (Day 5's

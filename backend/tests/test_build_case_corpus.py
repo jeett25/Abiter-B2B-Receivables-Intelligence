@@ -98,7 +98,7 @@ def test_populated_rows_have_full_dimension_embeddings_and_match_historical_coun
     # HISTORICAL_STATUSES count: Day 5's attribution write-back moved
     # hundreds of LIVE invoices to PAID too, which would inflate that count
     # without those invoices ever being part of the corpus-building pass.
-    # See app/attribution/DECISIONS.md.
+    # See docs/attribution-DECISIONS.md.
     EXPECTED_HISTORICAL_CORPUS_SIZE = 9_000
 
     count = db_session.query(CaseEmbedding).count()

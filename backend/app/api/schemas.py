@@ -3,7 +3,7 @@
 These ARE the source of truth for what this API actually returns -- NOT
 frontend/lib/types.ts, which still reflects a pre-Day-4 shape for
 DecisionTrace.policy_checks (final_action/result, no
-state_transition_path/retry_count/tool_result). See app/api/DECISIONS.md
+state_transition_path/retry_count/tool_result). See docs/api-DECISIONS.md
 for the full explanation; Day 6's frontend-wiring pass reconciles
 types.ts against this file, not the other way around.
 """
@@ -91,7 +91,7 @@ class AttributionHeadline(BaseModel):
     incremental_net_recovery: float
     # COUNT-based (fraction of invoices recovered), distinct from the
     # amount-weighted rates above -- this is the metric recovery_rate_diff_z
-    # is actually computed on (see app/attribution/DECISIONS.md: "built on
+    # is actually computed on (see docs/attribution-DECISIONS.md: "built on
     # the COUNT-based rate, never the amount-weighted one"). The
     # amount-weighted rate has no valid standard error at this sample size;
     # exposing this lets the frontend show the number its own significance
@@ -144,7 +144,7 @@ class CupedMetricOut(BaseModel):
     """CUPED-adjusted pooled figure, alongside the raw one it's derived
     from -- never a replacement. 'count' matches evaluate.py's own
     count-based recovery rate exactly (the statistically-tested metric --
-    see app/attribution/DECISIONS.md); 'amount' is the average recovered
+    see docs/attribution-DECISIONS.md); 'amount' is the average recovered
     amount PER INVOICE, a related but distinct statistic from the
     ratio-of-sums 'amount-weighted recovery rate' shown elsewhere -- see
     app/attribution/cuped.py's module docstring."""
@@ -166,7 +166,7 @@ class AttributionResponse(BaseModel):
     slices: list[AttributionSliceOut]
     # Both None unless include_diagnostics=true was passed -- hidden
     # ground-truth-informed content, gated deliberately (not just labeled).
-    # See app/api/DECISIONS.md.
+    # See docs/api-DECISIONS.md.
     escalate_by_archetype: list[ArchetypeDiagnosticRow] | None = None
     consistency_warnings: list[str] | None = None
     # None unless include_cuped=true. Pooled-only (portfolio headline), not

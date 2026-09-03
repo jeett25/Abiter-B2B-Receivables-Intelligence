@@ -21,7 +21,7 @@ same invoice_number shows up every time this is rehearsed/recorded:
   D (already paid)    -> already_paid_suppress
   F (tool failure)    -> chronic_late_escalate (guaranteed VOICE post-Day-5's
                           ESCALATE amount-threshold fix -- was ESCALATE at
-                          Day-3 time; see app/decision/DECISIONS.md and
+                          Day-3 time; see docs/decision-DECISIONS.md and
                           synthetic/seed_demo.py -- same fixture
                           test_resilience.py's forced-failure test uses,
                           now forcing execute_voice, not request_human_handoff)
@@ -234,7 +234,7 @@ def scenario_e_low_value() -> None:
         "WAIT never wins under the current economics config, even at the amount/probability floor "
         "(WHATSAPP's EV beats WAIT's by a wide margin down to Rs.5,000/p=0.01), and no live invoice has "
         "prior_contact_count >= MAX_CONTACT_ATTEMPTS since nothing writes to recovery_actions for the live "
-        "pool. See app/agent/DECISIONS.md for the full verification. Demonstrating the mechanism directly "
+        "pool. See docs/agent-DECISIONS.md for the full verification. Demonstrating the mechanism directly "
         "instead -- ILLUSTRATIVE: this is determine_next_state() called with a constructed context, not a "
         "real invoice's own decision, but it's the exact same function every real invocation relies on."
     )

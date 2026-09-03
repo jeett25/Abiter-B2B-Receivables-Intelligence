@@ -110,7 +110,7 @@ def test_large_invoice_no_longer_prefers_escalate_after_uplift_correction():
     """Day-5 finding: this exact scenario (base=0.5, amount=300,000) used to
     make ESCALATE win (EV~170,270 under the old flat 0.14 uplift) -- the
     randomized-holdout experiment found that assumption unsupported for
-    large invoices (see app/decision/DECISIONS.md), so above
+    large invoices (see docs/decision-DECISIONS.md), so above
     ESCALATE_LARGE_AMOUNT_THRESHOLD_INR its uplift now correctly loses to
     VOICE, whose uplift was untouched by the correction."""
     amount = 300_000.0

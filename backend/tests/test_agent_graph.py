@@ -136,7 +136,7 @@ def test_run_invoice_recovery_probability_matches_direct_decide_call(db_session)
     produces the identical recovery_probability the Series-based decide()
     path produces for the same invoice/as_of -- empirically confirmed, not
     assumed, matching this project's standing convention for any new
-    single-row-scoring usage pattern (see app/ml/DECISIONS.md)."""
+    single-row-scoring usage pattern (see docs/ml-DECISIONS.md)."""
     live_invoice_id = db_session.execute(
         select(Invoice.id).where(Invoice.status == InvoiceStatus.OPEN).limit(1)
     ).scalar_one()

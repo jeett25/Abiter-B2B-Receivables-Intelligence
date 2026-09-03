@@ -19,7 +19,7 @@ def _base_query():
     """Scoped to the live pool via an EXISTS check against decision_logs --
     a real DB fact (only the 900 live invoices have ever been scored), not
     an import of synthetic.generator's date-range constants. See
-    app/api/DECISIONS.md."""
+    docs/api-DECISIONS.md."""
     return (
         select(
             Invoice.id,

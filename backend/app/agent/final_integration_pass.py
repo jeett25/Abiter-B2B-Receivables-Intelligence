@@ -50,7 +50,7 @@ def _check_no_hidden_ground_truth() -> list[str]:
     Excludes this file itself: FORBIDDEN_IDENTIFIERS necessarily contains
     these words as string literals to define the denylist, which is a
     trivial self-match, not a real violation -- caught on the first real
-    run of this check (see app/agent/DECISIONS.md)."""
+    run of this check (see docs/agent-DECISIONS.md)."""
     violations = []
     for path in AGENT_DIR.glob("*.py"):
         if path.name == Path(__file__).name:

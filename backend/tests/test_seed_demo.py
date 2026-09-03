@@ -26,7 +26,7 @@ def test_verify_reliable_payer_wait_passes_its_own_check(db_session):
 def test_reset_and_reassess_chronic_late_escalate_now_expects_voice(db_session):
     """Reframed after subtask 6's ESCALATE fix -- INV-10184 (Rs.118,361) is
     above ESCALATE_LARGE_AMOUNT_THRESHOLD_INR, so VOICE is the correct
-    current answer, not the pre-Day-5 ESCALATE. See app/decision/DECISIONS.md."""
+    current answer, not the pre-Day-5 ESCALATE. See docs/decision-DECISIONS.md."""
     fixtures = _load_fixtures()
     result = reset_and_reassess(fixtures["chronic_late_escalate"]["invoice_number"])
     passed, detail = FIXTURE_CHECKS["chronic_late_escalate"](result)

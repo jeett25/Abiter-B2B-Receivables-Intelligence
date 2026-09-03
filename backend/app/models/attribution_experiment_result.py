@@ -14,7 +14,7 @@ class AttributionExperimentResult(Base):
     """One row per (experiment_id, segment, action) aggregate slice.
     segment=NULL means pooled across segments; action=NULL means pooled
     across actions -- (segment=NULL, action=NULL) is the portfolio headline
-    row. See app/attribution/DECISIONS.md for why this shape (not two
+    row. See docs/attribution-DECISIONS.md for why this shape (not two
     separate tables) was chosen, and why incremental_recovery_rate/amount
     here -- not attribution_records.incremental_recovery -- is the real
     treatment-vs-control comparison."""

@@ -4,9 +4,9 @@ import { Card, IconStat, PageHeader } from "@/lib/ui";
 // Subtask 14 (Phase D): "small, mostly static reported numbers" per the
 // build plan -- deliberately NOT a new live-eval endpoint or a monitoring
 // stack. Every figure below is a real, already-documented result from the
-// project's own Day 2-4 build process (see backend/app/ml/DECISIONS.md,
+// project's own Day 2-4 build process (see backend/docs/ml-DECISIONS.md,
 // app/retrieval/hybrid_search.py's relevance diagnostic, and
-// app/agent/DECISIONS.md) -- this page presents them, it doesn't recompute
+// docs/agent-DECISIONS.md) -- this page presents them, it doesn't recompute
 // them. That's also why this is a plain Server Component with no fetch: the
 // numbers don't change between page loads the way /metrics's live-persisted
 // data does.

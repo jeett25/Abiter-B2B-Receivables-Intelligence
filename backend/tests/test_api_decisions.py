@@ -37,7 +37,7 @@ def test_get_decision_returns_real_decision_log_fields(db_session):
     body = resp.json()
     assert body["invoice_id"] == str(invoice_id)
     assert "recovery_probability" in body["model_scores"]
-    # Real agent-shaped keys (see app/api/DECISIONS.md) -- NOT
+    # Real agent-shaped keys (see docs/api-DECISIONS.md) -- NOT
     # frontend/lib/types.ts's stale final_action/result names.
     assert "is_disputed" in body["policy_checks"]
     assert body["decision"]

@@ -20,7 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # incremental_recovery is never a per-invoice causal number (see
-    # app/attribution/DECISIONS.md) -- Day 5's persistence writes NULL here
+    # docs/attribution-DECISIONS.md) -- Day 5's persistence writes NULL here
     # for every row; the real incremental-recovery figure is a group-level
     # aggregate computed separately, not stored per attribution_records row.
     op.alter_column('attribution_records', 'incremental_recovery', nullable=True)

@@ -23,7 +23,7 @@ def upgrade() -> None:
     # deliberately a different basis from treatment_recovery_rate/
     # control_recovery_rate above, which are amount-weighted for the dollar
     # figures. Mixing these two bases was exactly the bug fixed in subtask 4;
-    # see app/attribution/DECISIONS.md) plus a lightweight two-proportion
+    # see docs/attribution-DECISIONS.md) plus a lightweight two-proportion
     # standard error / z-score for informal noise calibration -- nullable,
     # since a slice with 0 invoices in either arm has no defined SE/z.
     op.add_column('attribution_experiment_results', sa.Column('treatment_count_recovery_rate', sa.Float, nullable=True))

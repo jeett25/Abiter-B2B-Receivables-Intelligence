@@ -43,7 +43,7 @@ MATERIALITY_FRACTION_OF_AMOUNT = 0.01
 # ESCALATE uplift of exactly 0.00. amount is used as an OBSERVABLE proxy
 # for that archetype (a real system can condition on amount, never on
 # archetype) -- checked against real amount-by-archetype distributions,
-# not assumed clean; see app/decision/DECISIONS.md for the full evidence
+# not assumed clean; see docs/decision-DECISIONS.md for the full evidence
 # chain, the threshold derivation, and the known limitation (the proxy has
 # genuine tail overlap, so this will misclassify a minority of invoices in
 # both directions).

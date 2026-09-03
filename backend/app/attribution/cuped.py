@@ -3,7 +3,7 @@ for the Day-5 attribution experiment.
 
 Covariate: the Day-2 recovery model's calibrated probability, computed as
 of due_date -- strictly before any treatment action (see
-app/attribution/DECISIONS.md's "baseline_predicted_recovery" entry: "the
+docs/attribution-DECISIONS.md's "baseline_predicted_recovery" entry: "the
 Day-2 ML model's own prediction, identical for both arms of a given
 invoice"). base_probability = baseline_predicted_recovery / amount for the
 count metric; baseline_predicted_recovery itself (already probability *

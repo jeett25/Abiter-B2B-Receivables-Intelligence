@@ -50,7 +50,7 @@ def test_reliable_payer_scenario_waits(db_session):
 
 def test_chronic_late_scenario_now_gets_voice_not_escalate(db_session):
     """Was ESCALATE at Day-3 time. Reframed after Day 5, subtask 6's
-    ESCALATE amount-threshold fix (see app/decision/DECISIONS.md): this
+    ESCALATE amount-threshold fix (see docs/decision-DECISIONS.md): this
     fixture is Rs.118,361, above ESCALATE_LARGE_AMOUNT_THRESHOLD_INR
     (Rs.100,000), so its uplift is now correctly reduced and VOICE wins
     instead -- direct, concrete proof of the Day-5 correction, not a
@@ -108,7 +108,7 @@ def test_high_value_scenario_takes_an_active_intervention(db_session):
     after fixing a real survivorship-bias bug (Day 5's attribution write-back
     only ever flips a formerly-live invoice to PAID when it recovered, which
     had been silently collapsing the most recent training slice to 100%
-    positive -- see app/ml/DECISIONS.md and app/ml/features.py's
+    positive -- see docs/ml-DECISIONS.md and app/ml/features.py's
     organic_historical_mask()). Against the corrected model this invoice's
     recovery_probability is a genuinely high ~0.95, and diminishing-returns
     economics correctly finds no active intervention clears its cost/

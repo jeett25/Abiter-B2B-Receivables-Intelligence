@@ -19,7 +19,7 @@ import { cx } from "@/lib/ui";
 // of those values -- assessment, monitoring, broken, reassess, and plain
 // closed -- are defined in the schema but never actually assigned by any
 // rule in this codebase (see CLAUDE.md's account_state notes and
-// app/agent/DECISIONS.md) -- confirmed 0 rows across the whole dataset, not
+// docs/agent-DECISIONS.md) -- confirmed 0 rows across the whole dataset, not
 // just today, so listing them here was a guaranteed dead end every time.
 // overdue/promise/kept are kept even though currently empty -- those ARE
 // reachable given the right event sequence (e.g. a live promise-extraction

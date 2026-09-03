@@ -2,7 +2,7 @@
 
 Centralizes every (current_state, event, ...) -> next_state decision in this
 project. Nothing else infers or sets an account-state transition
-independently (see app/agent/DECISIONS.md's UPDATE_STATE-is-scaffolding
+independently (see docs/agent-DECISIONS.md's UPDATE_STATE-is-scaffolding
 entry, which this module retires).
 
 Mirrors app.decision.policy's shape deliberately: a small frozen context

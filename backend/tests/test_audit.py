@@ -49,7 +49,7 @@ def _pick_undisputed_live_invoice(offset: int):
 
 def _fetch_decision_log(invoice_id, timestamp: datetime) -> DecisionLog:
     """decision_logs is deliberately append-only with no dedup (see
-    app/agent/DECISIONS.md's Idempotency entry) -- rerunning the full test
+    docs/agent-DECISIONS.md's Idempotency entry) -- rerunning the full test
     suite against the same persistent dev DB inserts another row for the
     same (invoice_id, timestamp) key every time. `timestamp` alone can't
     disambiguate "most recently inserted" (it's the business/event moment,
@@ -156,7 +156,7 @@ def test_promise_creation_shape_persists_ptp_score_and_promise_state(db_session)
     assert account_state.current_state == AccountCurrentState.PROMISE
     # approx: float32->float64 widening through Postgres's wire protocol
     # can differ from the in-memory Python float in the last bit or two --
-    # not a real behavior mismatch, see app/ml/DECISIONS.md's float32/64 entry.
+    # not a real behavior mismatch, see docs/ml-DECISIONS.md's float32/64 entry.
     assert account_state.promise_score == pytest.approx(in_memory["ptp_probability"])
 
 

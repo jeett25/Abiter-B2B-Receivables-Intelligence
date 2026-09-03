@@ -128,7 +128,7 @@ def calibrated_predict_proba(model: XGBClassifier, calibrator: LogisticRegressio
     consistency even though LogisticRegression.predict_proba() is less
     likely to leak XGBoost's float32 predict_proba() output through than
     IsotonicRegression.predict() was observed to. See that function's
-    docstring and app/ml/DECISIONS.md for the full root-cause trace."""
+    docstring and docs/ml-DECISIONS.md for the full root-cause trace."""
     X = prepare_features(df)
     raw_proba = model.predict_proba(X)[:, 1]
     calibrated_proba = calibrator.predict_proba(raw_proba.reshape(-1, 1))[:, 1].astype(np.float64)

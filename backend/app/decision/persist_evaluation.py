@@ -1,6 +1,6 @@
 """Persist a fresh baseline-vs-engine EvaluationSnapshot -- the read side of
 the Day 6 metrics-staleness bug (see app/models/evaluation_snapshot.py's
-docstring and app/api/DECISIONS.md for the full story). Re-run this whenever
+docstring and docs/api-DECISIONS.md for the full story). Re-run this whenever
 the live pool composition or the economics config changes; GET /api/metrics
 only ever reads the latest persisted snapshot, it never recomputes.
 

@@ -32,7 +32,7 @@ Scope, deliberately narrow: touches ONLY these 6 invoices, never the other
 894 live invoices, and never re-runs the attribution experiment itself
 (that's already deployed and verified -- redoing it would invalidate a
 working deployment for no benefit). attribution_records rows are left
-untouched for all 6 -- see app/attribution/DECISIONS.md's note on why
+untouched for all 6 -- see docs/attribution-DECISIONS.md's note on why
 decision_logs/account_state and attribution_records will legitimately
 disagree about the 3 write-back-affected invoices' history, and why
 that's not a bug.
@@ -229,7 +229,7 @@ def check_high_value_act(result: dict) -> tuple[bool, str]:
     # invoice does double duty as Scenario A's paid-invoice narrative. WAIT:
     # after the 2026-09-03 recovery-model retrain (fixed a survivorship-bias
     # bug that had been inflating recent-history "always recovers" rows --
-    # see app/ml/DECISIONS.md), this invoice's recovery_probability is a
+    # see docs/ml-DECISIONS.md), this invoice's recovery_probability is a
     # genuinely high ~0.95, and diminishing-returns economics correctly finds
     # no active intervention clears its cost/materiality floor. Not a
     # regression -- a more accurate model producing a more honest answer.

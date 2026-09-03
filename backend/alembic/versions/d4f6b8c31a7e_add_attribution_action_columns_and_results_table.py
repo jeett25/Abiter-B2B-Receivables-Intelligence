@@ -31,7 +31,7 @@ def upgrade() -> None:
     # Populated for CONTROL rows only -- what the engine would have chosen,
     # computed for reporting/stratification, never fed back into control's
     # simulated outcome. NULL for treatment rows (their `action` column
-    # above already gives the real answer). See app/attribution/DECISIONS.md.
+    # above already gives the real answer). See docs/attribution-DECISIONS.md.
     op.add_column(
         'attribution_records',
         sa.Column('counterfactual_action', postgresql.ENUM(*_ACTION_TYPE_VALUES, name='action_type', create_type=False), nullable=True),

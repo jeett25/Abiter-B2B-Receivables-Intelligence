@@ -44,7 +44,7 @@ def get_decision(invoice_id: UUID, db: Annotated[Session, Depends(get_db)]):
         raise HTTPException(status_code=404, detail="Invoice not found")
 
     # All rows, most recent first -- decision_logs is append-only with no
-    # dedup (see app/agent/DECISIONS.md's Idempotency entry), so more than
+    # dedup (see docs/agent-DECISIONS.md's Idempotency entry), so more than
     # one row can exist for an invoice if it was ever reprocessed.
     # `timestamp` alone can't break ties (every invoice in the same batch
     # run shares the same business timestamp) -- `created_at` (real

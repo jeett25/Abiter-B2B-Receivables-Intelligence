@@ -120,6 +120,26 @@ quota issue above (`test_agent_demo_parity.py::...[low_value_stop]`,
 `test_seed_demo.py::test_seed_demo_end_to_end_reports_all_clear`) — expected
 to clear once the quota resets and `seed_demo.py` is rerun.
 
+**Confirmed 2026-09-03 (later session, work PC, re-run of `final_integration_pass
+--persist`): the 30-payment-link test-mode cap is per RAZORPAY ACCOUNT, not per
+API key.** Regenerated `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` from the Razorpay
+dashboard (new test key, same account) and reran `reset_and_reassess('INV-10040')`
+directly — `settings.razorpay_key_id` confirmed to be reading the new key, and
+it still hit `"Razorpay API error: test mode limit of 30 reached for
+payment_link"` verbatim. A new key on the same account does NOT reset the
+quota. Same-session, this run's own `final_integration_pass --persist` produced
+`payment_link: 0` (down from 2 in the original canonical dump) and `wait: 178`
+(up from 176) — confirms the quota is already fully consumed account-wide, not
+close to it. **The only real fixes are: (a) a genuinely different Razorpay test
+account, or (b) waiting for whatever period Razorpay resets this cap on
+(unconfirmed — never documented by Razorpay in anything checked so far).**
+Decided, again, not to chase this further today — same reasoning as the
+original finding: 312/315 tests green, all 3 failures single-root-caused and
+already understood, `low_value_stop` (`INV-10040`) stays pinned at
+`selected_action=wait` for now. Revisit before actually recording the demo
+video — a `WAIT` on this fixture is a materially different, less illustrative
+demo moment than the intended "cheap nudge on a low-value invoice" story.
+
 **Cross-machine DB reconciliation (2026-09-03, full account)**: the home
 Mac's local DB had diverged from this work PC's because it ran
 `synthetic.generator` fresh rather than restoring a transferred dump —

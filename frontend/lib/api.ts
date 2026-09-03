@@ -1,5 +1,5 @@
 // Thin typed client over backend/app/api -- every route there is GET-only
-// and reads already-persisted data (see app/api/DECISIONS.md), so there is
+// and reads already-persisted data (see docs/api-DECISIONS.md), so there is
 // deliberately no caching layer or mutation support here.
 
 import { AttributionResponse, DecisionTrace, DemoFixture, InvoiceSummary, InvoiceTimeline, MetricsResponse } from "./types";
@@ -84,7 +84,7 @@ export function getMetrics(): Promise<MetricsResponse> {
 
 // GET /api/attribution. include_diagnostics deliberately left at its
 // default (false) -- those fields are gated hidden-ground-truth diagnostics
-// (see app/api/DECISIONS.md), not for a production-facing screen.
+// (see docs/api-DECISIONS.md), not for a production-facing screen.
 // include_cuped=true is safe for production (not hidden-ground-truth-
 // informed) -- see app/attribution/cuped.py.
 export function getAttribution(): Promise<AttributionResponse> {

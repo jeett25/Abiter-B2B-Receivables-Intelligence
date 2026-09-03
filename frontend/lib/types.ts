@@ -1,5 +1,5 @@
 // Mirrors backend/app/api/schemas.py -- the REAL source of truth for what
-// the API returns (see backend/app/api/DECISIONS.md: schemas.py, not this
+// the API returns (see backend/docs/api-DECISIONS.md: schemas.py, not this
 // file, is authoritative for DecisionTrace's nested shapes). ActionEV/
 // RetrievedCase additionally trace back to app/decision/economics.py and
 // app/retrieval/hybrid_search.py, and enum string values to
@@ -140,7 +140,7 @@ export interface PolicyChecks {
 
 // app/api/schemas.py::DecisionTrace. model_scores/evidence/policy_checks are
 // dict[str, Any] on the wire -- schemas.py deliberately never narrows them
-// (see app/api/DECISIONS.md) so the backend can't silently drop a field the
+// (see docs/api-DECISIONS.md) so the backend can't silently drop a field the
 // audit trail actually wrote. The interfaces above describe what's actually
 // written today, not a contract the backend validates against -- treat every
 // field on ModelScores/Evidence/PolicyChecks as possibly absent in practice.
@@ -210,7 +210,7 @@ export interface AttributionHeadline {
   incremental_net_recovery: number;
   // COUNT-based (fraction of invoices recovered) -- distinct from the
   // amount-weighted rates above, and the metric the z-score is actually
-  // computed on (app/attribution/DECISIONS.md). Null only if the backend
+  // computed on (docs/attribution-DECISIONS.md). Null only if the backend
   // hasn't recomputed this slice since this field was added.
   treatment_count_recovery_rate: number | null;
   control_count_recovery_rate: number | null;
@@ -252,7 +252,7 @@ export interface AttributionSliceOut {
 
 // app/api/schemas.py::ArchetypeDiagnosticRow -- hidden-ground-truth
 // diagnostic, only present when include_diagnostics=true. See
-// app/attribution/DECISIONS.md: archetype has no real-world analogue --
+// docs/attribution-DECISIONS.md: archetype has no real-world analogue --
 // never surface this on a production-facing screen, verification/dev use only.
 export interface ArchetypeDiagnosticRow {
   archetype: string;
@@ -289,7 +289,7 @@ export interface AttributionResponse {
   experiment_id: string;
   slices: AttributionSliceOut[];
   // Both undefined unless include_diagnostics=true was passed -- gated
-  // deliberately (see app/api/DECISIONS.md): absent from the JSON entirely,
+  // deliberately (see docs/api-DECISIONS.md): absent from the JSON entirely,
   // not present-but-null.
   escalate_by_archetype?: ArchetypeDiagnosticRow[];
   consistency_warnings?: string[];

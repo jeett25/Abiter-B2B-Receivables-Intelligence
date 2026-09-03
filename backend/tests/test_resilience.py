@@ -165,7 +165,7 @@ def test_full_graph_survives_a_forced_tool_failure_and_falls_back_safely(monkeyp
     """The literal 'break something on purpose' demo moment. Uses the
     chronic_late_escalate demo fixture. Was ESCALATE at Day-3 time;
     reframed after Day 5 subtask 6's ESCALATE amount-threshold fix (see
-    app/decision/DECISIONS.md) -- INV-10184 (Rs.118,361) now correctly
+    docs/decision-DECISIONS.md) -- INV-10184 (Rs.118,361) now correctly
     produces VOICE instead, so the forced failure targets execute_voice,
     not request_human_handoff. Still fully deterministic, still the same
     demo moment: economics wants an active intervention, the tool fails

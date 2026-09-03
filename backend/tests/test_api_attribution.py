@@ -14,7 +14,7 @@ def test_get_attribution_default_excludes_diagnostics(db_session):
     assert body["experiment_id"] == EXPERIMENT_ID
     assert len(body["slices"]) > 0
     # Gated fields absent entirely (response_model_exclude_none), not
-    # present-but-null -- see app/api/DECISIONS.md.
+    # present-but-null -- see docs/api-DECISIONS.md.
     assert "escalate_by_archetype" not in body
     assert "consistency_warnings" not in body
     assert "cuped" not in body

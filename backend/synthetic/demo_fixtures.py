@@ -43,7 +43,7 @@ SCENARIOS: dict[str, dict] = {
         "order": "amount_desc",
         # Was "escalate" -- Day 5's ESCALATE_LARGE_AMOUNT_THRESHOLD_INR
         # correction legitimately moved this invoice's real answer to VOICE
-        # (see app/decision/DECISIONS.md). Fixture key kept as-is (stable
+        # (see docs/decision-DECISIONS.md). Fixture key kept as-is (stable
         # identifier, direct proof of the Day-5 finding in action), but this
         # label is shown to viewers verbatim in the demo-case menu -- it
         # must describe what clicking through actually shows, not the
@@ -54,7 +54,7 @@ SCENARIOS: dict[str, dict] = {
         "archetypes": ["promise_breaker"],
         "order": "amount_desc",
         # Was "reassess" -- REASSESS is a transient path label, never a
-        # literally persisted decision (see app/agent/DECISIONS.md); a
+        # literally persisted decision (see docs/agent-DECISIONS.md); a
         # single fresh assessment always lands on a real action instead.
         # Labeled with this fixture's actual current decision so the menu
         # doesn't promise something a first click-through won't show.

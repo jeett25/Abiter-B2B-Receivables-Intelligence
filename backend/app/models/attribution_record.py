@@ -20,7 +20,7 @@ class AttributionRecord(Base):
     # Nullable: never a per-invoice causal number (a single invoice is either
     # treatment or control, never both -- its individual treatment effect is
     # unobservable). The real incremental-recovery figure is a GROUP
-    # comparison computed separately -- see app/attribution/DECISIONS.md.
+    # comparison computed separately -- see docs/attribution-DECISIONS.md.
     incremental_recovery: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     # The real action dispatched -- treatment rows only, NULL for control.
     action: Mapped[ActionType | None] = mapped_column(action_type_enum, nullable=True)

@@ -52,7 +52,7 @@ def action_uplift(
 ) -> float:
     """ACTION_UPLIFT's flat per-action value, with two conditioned
     exceptions: ESCALATE above ESCALATE_LARGE_AMOUNT_THRESHOLD_INR (Day-5
-    evidence, see app/decision/DECISIONS.md), and a small root-cause nudge
+    evidence, see docs/decision-DECISIONS.md), and a small root-cause nudge
     (root_cause_label in {"cash_flow_stress", "oversight"}, from the
     non-disputed-only classifier in app/ml/train_root_cause.py) applied only
     when root_cause_probability clears ROOT_CAUSE_CONFIDENCE_THRESHOLD. Both

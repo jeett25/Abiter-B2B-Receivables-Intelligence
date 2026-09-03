@@ -134,7 +134,7 @@ def _build_treatment_decisions(
     """The only place this subtask invokes the real ML+retrieval+economics+
     policy pipeline (decide_from_feature_row, reused unmodified from
     app/decision/service.py) -- and only for the treatment arm. Control
-    never touches it, by design (see app/attribution/DECISIONS.md)."""
+    never touches it, by design (see docs/attribution-DECISIONS.md)."""
     treatment_table = live_table[live_table["invoice_id"].isin(treatment_ids)]
     if limit is not None:
         treatment_table = treatment_table.head(limit)
