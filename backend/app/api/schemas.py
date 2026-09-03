@@ -133,6 +133,27 @@ class ArchetypeDiagnosticRow(BaseModel):
     recovery_rate_diff_z: float | None
 
 
+class CupedMetricOut(BaseModel):
+    """CUPED-adjusted pooled figure, alongside the raw one it's derived
+    from -- never a replacement. 'count' matches evaluate.py's own
+    count-based recovery rate exactly (the statistically-tested metric --
+    see app/attribution/DECISIONS.md); 'amount' is the average recovered
+    amount PER INVOICE, a related but distinct statistic from the
+    ratio-of-sums 'amount-weighted recovery rate' shown elsewhere -- see
+    app/attribution/cuped.py's module docstring."""
+
+    metric: str
+    treatment_n: int
+    control_n: int
+    raw_effect: float
+    raw_se: float | None
+    cuped_effect: float
+    cuped_se: float | None
+    se_reduction_pct: float | None
+    theta: float
+    corr: float
+
+
 class AttributionResponse(BaseModel):
     experiment_id: str
     slices: list[AttributionSliceOut]
@@ -141,3 +162,6 @@ class AttributionResponse(BaseModel):
     # See app/api/DECISIONS.md.
     escalate_by_archetype: list[ArchetypeDiagnosticRow] | None = None
     consistency_warnings: list[str] | None = None
+    # None unless include_cuped=true. Pooled-only (portfolio headline), not
+    # gated by hidden ground truth -- see app/attribution/cuped.py.
+    cuped: list[CupedMetricOut] | None = None

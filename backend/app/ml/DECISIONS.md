@@ -359,3 +359,43 @@ functions (`prior_resolved_invoices`/`prior_issued_invoices`) are unchanged
 from the already-proven-safe version above, so the existing test still
 covers the mechanism this function calls -- only the caller and the
 cutoff/column set are new.
+
+## Recovery/PTP/root-cause training population: survivorship bias from Day 5's attribution write-back (2026-09-03)
+
+`build_feature_table()`/`build_ptp_table()` selected their training
+population by `invoices.status IN (PAID, WRITTEN_OFF)` alone. That's safe
+until Day 5's attribution experiment runs once -- its ledger write-back
+(`app/attribution/simulate_outcomes.py`) only EVER flips a formerly-live
+invoice to PAID when the simulated outcome was `recovered=True`; a
+never-recovered one stays OPEN forever. So once attribution has run, that
+status filter silently pulls in an outcome-pre-filtered subset as if it
+were organic history -- confirmed live: retraining against a
+post-attribution DB collapsed the most recent time slice of the recovery
+model's Experiment-A test set to 417/417 recovered (ROC-AUC undefined,
+`positive_rate=1.0`). Nobody had hit this before 2026-09-03 because nobody
+had previously retrained models against a DB where attribution had already
+mutated invoice statuses -- Day 2's original numbers (table above) predate
+Day 5 entirely.
+
+Fixed via `organic_historical_mask()` in `app/ml/features.py`: excludes any
+invoice with a `payments.method='attribution_simulation'` row from the
+top-level training population (`build_feature_table`, `build_ptp_table`,
+`resolution_delay_curve`). Deliberately does NOT touch
+`prior_resolved_invoices`/`is_resolved_before()` -- an attribution-simulated
+resolution is a real fact once it's happened, valid as *prior-history
+context* for a DIFFERENT invoice's rolling features; it's only invalid as
+the labeled training row itself. In practice this distinction is moot
+(attribution-simulated invoices are all very recent, so they can never be
+"prior" to an organic historical invoice's own cutoff) but kept for
+correctness of the argument, not just the result.
+
+**Post-fix retrained metrics** (against the 2026-09-03-restored dataset --
+see CLAUDE.md's "⚠ CURRENT CANONICAL STATE" section, not directly comparable
+to the `before/after` table above which was a same-dataset Day-2 rerun):
+Recovery n=1613 test, ROC-AUC=0.8339, PR-AUC=0.9240, Brier=0.1177 -- closely
+matches the original Day-2 numbers, confirming the fix restored the
+intended methodology rather than changing it. Root cause (new model, not
+affected by this bug the same way -- its label isn't the recovery outcome)
+n=1529, ROC-AUC=0.7577, unaffected in kind, though its own population was
+equally contaminated in composition before the fix (same exclusion applies
+via the shared `build_feature_table()` call).

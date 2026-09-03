@@ -10,6 +10,134 @@ Full architecture spec (11-table Postgres+pgvector schema, XGBoost recovery/PTP 
 
 7-day build plan, ending with a demo video submission. Days 1–4 are all done (see their sections below). **Day 5 starts next session.**
 
+## ⚠ CURRENT CANONICAL STATE (2026-09-03, work PC) — READ THIS FIRST
+
+**Every specific number (model metrics, attribution rates, evaluation totals,
+live-pool counts) anywhere below this section was true AT THE TIME that
+section was written, against whatever database existed then. Multiple
+sessions since have restored/replaced/retrained against different database
+instances — a number quoted from an old section is not reliable as "the
+current state" without checking here first.** This section is the one place
+that gets updated in place (not appended-to-chronologically) as the
+canonical numbers change. If you're a future session and about to cite a
+statistic from this file in a prompt, script, or slide — use the numbers in
+THIS section, not one found by searching the Day-by-day history below.
+
+**Why this section exists:** 2026-09-03 investigation found the home Mac and
+work PC had diverged (see "Cross-machine DB reconciliation" below) —
+home Mac had independently re-run `synthetic.generator` rather than
+restoring a transferred dump, producing a different (but business-column-
+identical) dataset with entirely different invoice UUIDs. That, plus a real
+survivorship-bias bug in recovery-model training (see below), made several
+of this file's previously-"final" numbers wrong. Investigated, fixed, and
+this DB is now the one canonical instance going forward.
+
+**Database**: this work PC's local Docker Postgres (`receivables_ai`) is the
+canonical instance, restored from the home Mac's 2026-09-02 dump. Alembic
+head: `834e0783e3f1`. 9,900 invoices total: 391 OPEN (live pool, down from
+900 — attribution's own write-back already flipped 509 of the original 900
+to PAID over the course of the Day-5 experiment), 8,358 PAID, 1,151
+WRITTEN_OFF. Of the PAID invoices, 509 were resolved via Day 5's attribution
+write-back (`payments.method='attribution_simulation'`) — those are
+correctly EXCLUDED from ML training population (see bug below), leaving a
+9,000-invoice organic historical pool (matching Day 1's original generated
+size exactly).
+
+**Real bug found and fixed (2026-09-03): recovery/PTP/root-cause model
+training had a survivorship-bias contamination.** `build_feature_table()`/
+`build_ptp_table()` selected their training population by
+`invoices.status IN (PAID, WRITTEN_OFF)` alone — but Day 5's attribution
+write-back only EVER flips a formerly-live invoice to PAID when it
+recovered (never-recovered ones stay OPEN forever). Once attribution has
+run once, naively training on that status filter silently pulls in this
+outcome-pre-filtered subset as real history, collapsing the most recent
+time slice to 100% positive (confirmed: recovery model's test set was
+417/417 recovered, ROC-AUC undefined, before the fix). This is a bug in
+code that predates this session — nobody had ever retrained models against
+a DB where attribution had already run before. Fixed via
+`organic_historical_mask()` in `app/ml/features.py` (excludes any invoice
+with an `attribution_simulation`-method payment from the top-level training
+population; still valid as prior-history context features for OTHER
+invoices — only invalid as the labeled training row itself). Committed as
+`7197fe7 "fix recovery model survivorship bias from attribution write-back"`.
+
+**Current model metrics** (retrained 2026-09-03 against the corrected
+population — closely matches original Day-2-era numbers, confirming the fix
+just restored the intended methodology rather than changing it):
+- Recovery: n=1613 test, ROC-AUC=0.8339, PR-AUC=0.9240, Brier=0.1177, positive_rate=0.772.
+- PTP: n=211 test, ROC-AUC=0.8350, PR-AUC=0.8899, Brier=0.1635, positive_rate=0.607 (unaffected by the bug — retrained anyway for artifact consistency).
+- Root cause: n=1529 test, ROC-AUC=0.7577, PR-AUC=0.7063, Brier=0.1987, positive_rate=0.456.
+
+**Current evaluation_snapshots** (refreshed 2026-09-03, `python -m
+app.decision.persist_evaluation`, against the corrected models and a fresh
+`final_integration_pass --persist` over the 391 open invoices): Baseline
+net=₹9,871,714.28 (recovery_rate=31.84%), Decision engine
+net=₹11,292,861.08 (recovery_rate=36.54%). **Net EV improvement:
++₹1,421,147.** (Supersedes every earlier-dated net-EV figure in this file.)
+
+**Known caveat on today's decision distribution**: repeated pipeline reruns
+during today's investigation exhausted Razorpay's test-mode payment-link
+quota (hard cap, ~30 links) partway through. 77 of 391 invoices (19.7%)
+whose real economics recommendation was PAYMENT_LINK show `wait` instead,
+via the already-existing, correctly-working "tool failed twice → fall back
+to WAIT, never guess a different channel" design (`app/agent/tools.py`) —
+not a policy override, not a modeling error. Decided to leave as an honest,
+correctly-labeled record rather than retry (retrying risks exhausting the
+quota further with no guaranteed fix — see chat history for the full
+reasoning). Action distribution from today's run: wait 176 (45.0%, ~77 of
+these are the quota artifact above), voice 108 (27.6%), whatsapp 56 (14.3%),
+stop 32 (8.2%), escalate 17 (4.3%), payment_link 2 (0.5%). All 7 automated
+safety checks (no duplicate processing, no policy bypass, business-hours
+compliance, no LLM calls outside promise extraction, no placeholder scores,
+no hidden-ground-truth identifiers) pass.
+
+**Attribution experiment (`attribution_experiment_results`/
+`attribution_records`) — NOT recomputed on 2026-09-03, still exactly as
+restored from the home Mac's dump** (computed_at 2026-09-02 18:15 UTC).
+Deliberately left alone: redoing it requires a pre-attribution snapshot
+(900 still-open invoices) that doesn't exist for this dataset instance —
+attribution's own write-back already mutated 509 invoices to PAID, and
+`app/attribution/DECISIONS.md` itself documents that rerunning against an
+already-mutated population produces a different, non-comparable experiment,
+not a "corrected" one. **Pooled result, 811 eligible invoices (404
+treatment / 407 control) — POSITIVE on this dataset, correcting every
+prior "-3.1%"/negative reference elsewhere in this file**:
+- Amount-weighted: treatment 38.14% vs. control 31.53% → **+6.61pp** (incremental_net_recovery ≈ +₹1,370,293).
+- Count-based (the statistically-tested one, per `app/attribution/DECISIONS.md`): treatment 64.85% vs. control 61.18% → **+3.67pp**, z≈1.08 (not significant at conventional thresholds, but positive, not negative).
+- ESCALATE's aggregation-consistency check DOES still fire on this dataset (pooled +₹122,248 vs. archetype-stratified sum -₹3,639 — a genuine Simpson's-paradox-style sign disagreement) — `tests/test_api_attribution.py::test_get_attribution_with_diagnostics_includes_archetype_breakdown_and_warnings` passes as-is, no code change was needed (an earlier "pre-existing failure" note elsewhere in this file was true against a different, now-superseded database state).
+
+**CUPED feasibility check run 2026-09-03** (against the numbers above, not
+built yet — pending go-ahead): `Corr(base_probability, recovered)` = 0.557
+→ 17.0% SE reduction on the count-based metric; `Corr(baseline_predicted_
+recovery, observed_recovery)` = 0.465 → 11.5% SE reduction on the
+amount-weighted metric. Both real, both matching the theoretical `1-√(1-r²)`
+prediction almost exactly — passes the "worth building" bar from the
+already-agreed plan (see "Attribution metric honesty fixes" section below).
+
+**Test suite**: 304 passed / 3 failed, all 3 tracing to the single Razorpay
+quota issue above (`test_agent_demo_parity.py::...[low_value_stop]`,
+`test_seed_demo.py::test_reset_and_reassess_low_value_stop_passes_its_own_check`,
+`test_seed_demo.py::test_seed_demo_end_to_end_reports_all_clear`) — expected
+to clear once the quota resets and `seed_demo.py` is rerun.
+
+**Cross-machine DB reconciliation (2026-09-03, full account)**: the home
+Mac's local DB had diverged from this work PC's because it ran
+`synthetic.generator` fresh rather than restoring a transferred dump —
+confirmed via identical aggregate business data (9,900 invoices, ₹495.18M
+total, byte-identical) but completely different invoice UUIDs.
+`app/attribution/assignment.py`'s `assign_treatment_groups()` and
+`simulate_outcomes.py`'s `draw_raw_outcomes()` both sort candidates by
+`str(invoice_id)` before consuming a seeded RNG stream — deterministic
+*given the same population*, but a different UUID set (from an independent
+generator run) reorders that stream entirely, landing on a different
+treatment/control split and a different sequence of recovery draws even
+under the same `SEED`. `app/attribution/DECISIONS.md` had already stated
+this precisely ("deterministic given the same seed" requires "the same
+population") without anyone connecting it to the cross-machine case. This
+work PC's DB was restored from the home Mac's dump (now canonical); the old
+work-PC dataset instance's numbers throughout this file's earlier sections
+no longer correspond to any live database.
+
 ## Repo layout
 
 ```
@@ -579,6 +707,15 @@ during this session.
 
 ## Day 6, Phase C: metrics staleness bug + attribution rerun (2026-09-02)
 
+**SUPERSEDED — see "⚠ CURRENT CANONICAL STATE" near the top of this file.**
+The specific numbers below (-3.1% pooled, +₹1,482,200 net EV, etc.) were
+correct for the work-PC dataset instance that existed on 2026-09-02. That
+instance no longer exists — 2026-09-03's cross-machine reconciliation
+restored this DB from the home Mac's dump, which is a different (though
+business-column-identical) dataset with a positive pooled attribution
+result. The bug/investigation narrative below is still accurate history;
+only the headline figures are stale.
+
 Found while redesigning the landing page: the "Net EV improvement" and
 "Measured incremental recovery" proof numbers were both showing negative,
 which would read badly to a recruiter viewing the site. Investigated
@@ -833,6 +970,16 @@ actively re-running training/decision/agent scripts on the Mac itself.
 
 ## Attribution metric honesty fixes (2026-09-02, after the "frontend done" commit)
 
+**SUPERSEDED numbers — see "⚠ CURRENT CANONICAL STATE" near the top of this
+file.** The pooled result on the current (2026-09-03-restored) DB is
+positive on both metrics, not negative — this section's "~-3%"/"-3.1pp"
+references were correct for the dataset instance that existed then, not the
+current one. The frontend fixes described below (both metrics shown,
+sign-aware coloring, low-n dimming) are still live and still correct code —
+only the specific numbers are stale. **The CUPED follow-up plan below was
+executed 2026-09-03** — see the current-state section for the feasibility
+result.
+
 Investigated the pooled attribution experiment's negative headline (~-3%)
 properly, at the user's request, rather than tuning anything until it looked
 better -- queried `attribution_experiment_results` directly instead of
@@ -903,6 +1050,18 @@ changes and a fresh dump on the work PC earlier that day but the dump never
 made it over. Everything in this section happened against the home Mac's
 local DB, independent of (and not yet reconciled with) whatever state the
 work PC is actually in.
+
+**RESOLVED 2026-09-03 — see "⚠ CURRENT CANONICAL STATE" near the top of
+this file for the full root-cause account and the fix.** Summary: the home
+Mac had run `synthetic.generator` fresh rather than restoring a transferred
+dump, producing a different (business-column-identical, UUID-different)
+dataset instance — which is why its own attribution numbers legitimately
+differed from the work PC's. This work PC's DB has since been restored
+from the home Mac's dump and is now the one canonical instance; the
+INV-10706 fix mentioned below was real but was chasing a symptom of this
+much larger effect, which is why it didn't close the gap. The paragraph
+below is preserved as accurate history of what was known/tried *at the
+time*, not as an open question anymore.
 
 **Unresolved cross-machine DB discrepancy (carries forward, see handoff
 prompt given to the user for a fresh session on the work PC):** the home
@@ -1181,16 +1340,26 @@ pattern, different call site). **Confirmed fully green**: full suite,
 
 ### Outstanding for the next session (before anything else)
 
-1. **Resolve the cross-machine DB discrepancy** (see the top of this
-   section) — a fresh Claude Code session was pointed at the work PC with
-   its own dump to investigate; read its findings first.
-2. **Make a fresh dump of this Mac's DB** (once the full test suite above
-   is confirmed green and no further DB-writing commands are pending) and
-   send it to the work PC per the established transfer mechanism.
-3. CUPED variance reduction (see "Attribution metric honesty fixes" above
-   — still not built, plan unchanged).
+**All 4 items below are now resolved/superseded as of 2026-09-03 — see
+"⚠ CURRENT CANONICAL STATE" at the top of this file. Preserved for
+history.**
+
+1. ~~**Resolve the cross-machine DB discrepancy**~~ — done 2026-09-03, work
+   PC's DB restored from this Mac's dump and is now the one canonical
+   instance. **Reversed direction**: rather than the home Mac sending
+   another dump to the work PC, the home Mac should now `git pull` (gets
+   the survivorship-bias fix too) and re-run the same local pipeline
+   (`app.ml.persist` → `final_integration_pass --persist` →
+   `persist_evaluation` → `seed_demo`) against its OWN local DB — since
+   that DB is the literal origin of the dump the work PC restored, this
+   reproduces the identical canonical state without transferring anything.
+2. ~~**Make a fresh dump of this Mac's DB**~~ — superseded by the above; no
+   dump transfer needed in either direction now.
+3. ~~CUPED variance reduction~~ — feasibility check run 2026-09-03 (see
+   current-state section), passed the bar. Full build pending.
 4. Then: remaining bug sweep, hosting (Vercel + Supabase sync, per the Day
-   6 "What's next" section below), demo-recording rehearsal.
+   6 "What's next" section below), demo-recording rehearsal. Still
+   applies.
 
 ## What's next (for future-session context)
 

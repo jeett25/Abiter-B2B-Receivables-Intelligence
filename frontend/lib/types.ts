@@ -258,6 +258,25 @@ export interface ArchetypeDiagnosticRow {
   recovery_rate_diff_z: number | null;
 }
 
+// app/api/schemas.py::CupedMetricOut -- CUPED-adjusted pooled figure,
+// always alongside the raw one it's derived from, never a replacement
+// (see app/attribution/cuped.py and DECISIONS.md's "report both, never
+// replace" rule). metric="amount" is the average recovered amount PER
+// INVOICE -- a different statistic from the ratio-based amount-weighted
+// recovery rate shown elsewhere; never relabel it as that.
+export interface CupedMetricOut {
+  metric: "count" | "amount";
+  treatment_n: number;
+  control_n: number;
+  raw_effect: number;
+  raw_se: number | null;
+  cuped_effect: number;
+  cuped_se: number | null;
+  se_reduction_pct: number | null;
+  theta: number;
+  corr: number;
+}
+
 // app/api/schemas.py::AttributionResponse
 export interface AttributionResponse {
   experiment_id: string;
@@ -267,6 +286,9 @@ export interface AttributionResponse {
   // not present-but-null.
   escalate_by_archetype?: ArchetypeDiagnosticRow[];
   consistency_warnings?: string[];
+  // Undefined unless include_cuped=true was passed. Independent of
+  // include_diagnostics -- CUPED isn't hidden-ground-truth-informed.
+  cuped?: CupedMetricOut[];
 }
 
 // app/api/routes/demo.py::DemoFixtureOut -- one of the 6 curated demo

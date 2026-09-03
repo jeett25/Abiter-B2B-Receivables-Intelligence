@@ -8,8 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
-from app.api.schemas import ArchetypeDiagnosticRow, AttributionResponse, AttributionSliceOut
+from app.api.schemas import ArchetypeDiagnosticRow, AttributionResponse, AttributionSliceOut, CupedMetricOut
 from app.attribution.config import EXPERIMENT_ID
+from app.attribution.cuped import compute_pooled_cuped
 from app.attribution.evaluate import (
     check_aggregation_consistency,
     compute_slice,
@@ -50,6 +51,12 @@ def get_attribution(
         description="Include hidden-ground-truth diagnostics (archetype breakdown, "
         "aggregation-consistency warnings) -- verification-only content, gated by default.",
     ),
+    include_cuped: bool = Query(
+        default=False,
+        description="Include CUPED-adjusted pooled figures (count-based and average-"
+        "recovered-amount-per-invoice) alongside the raw ones -- computed on demand, "
+        "never persisted, never replaces the raw estimate. See app/attribution/cuped.py.",
+    ),
 ):
     rows = (
         db.execute(select(AttributionExperimentResult).where(AttributionExperimentResult.experiment_id == EXPERIMENT_ID))
@@ -60,6 +67,26 @@ def get_attribution(
 
     escalate_by_archetype = None
     consistency_warnings = None
+    cuped = None
+
+    if include_cuped:
+        df = load_attribution_data(db.get_bind())
+        count_result, amount_result = compute_pooled_cuped(df)
+        cuped = [
+            CupedMetricOut(
+                metric=r.metric,
+                treatment_n=r.treatment_n,
+                control_n=r.control_n,
+                raw_effect=r.raw_effect,
+                raw_se=r.raw_se,
+                cuped_effect=r.cuped_effect,
+                cuped_se=r.cuped_se,
+                se_reduction_pct=r.se_reduction_pct,
+                theta=r.theta,
+                corr=r.corr,
+            )
+            for r in (count_result, amount_result)
+        ]
 
     if include_diagnostics:
         df = load_attribution_data(db.get_bind())
@@ -112,4 +139,6 @@ def get_attribution(
         payload["escalate_by_archetype"] = [r.model_dump() for r in escalate_by_archetype]
     if consistency_warnings is not None:
         payload["consistency_warnings"] = consistency_warnings
+    if cuped is not None:
+        payload["cuped"] = [c.model_dump() for c in cuped]
     return JSONResponse(content=payload)

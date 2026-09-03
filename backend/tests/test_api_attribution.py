@@ -17,6 +17,7 @@ def test_get_attribution_default_excludes_diagnostics(db_session):
     # present-but-null -- see app/api/DECISIONS.md.
     assert "escalate_by_archetype" not in body
     assert "consistency_warnings" not in body
+    assert "cuped" not in body
 
 
 def test_get_attribution_slices_include_the_portfolio_row(db_session):
@@ -33,3 +34,19 @@ def test_get_attribution_with_diagnostics_includes_archetype_breakdown_and_warni
     assert any(row["archetype"] == "strategic_enterprise" for row in body["escalate_by_archetype"])
     assert "consistency_warnings" in body
     assert any("escalate" in w for w in body["consistency_warnings"])
+
+
+def test_get_attribution_with_cuped_includes_both_raw_and_adjusted_pooled_figures(db_session):
+    resp = client.get("/api/attribution", params={"include_cuped": True})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "cuped" in body
+    assert {c["metric"] for c in body["cuped"]} == {"count", "amount"}
+    for c in body["cuped"]:
+        # Both raw and CUPED-adjusted always present side by side -- never a
+        # replacement, per app/attribution/cuped.py's module docstring.
+        assert c["raw_effect"] is not None
+        assert c["cuped_effect"] is not None
+        assert c["theta"] is not None
+        # include_cuped is independent of include_diagnostics.
+    assert "escalate_by_archetype" not in body

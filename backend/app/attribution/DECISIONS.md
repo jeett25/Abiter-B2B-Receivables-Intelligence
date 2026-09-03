@@ -558,3 +558,64 @@ specifically to carry both without a schema change between "pooled" and
 very differently to intervention than another; since the stratification
 machinery already exists, reporting per-segment alongside pooled is a small
 marginal cost for real analytical and demo value.
+
+## CUPED variance reduction (2026-09-03): feasibility-checked before building, report both, never replace
+
+Built after a cheap feasibility check (not on faith) -- see CLAUDE.md's
+"⚠ CURRENT CANONICAL STATE" section for the exact numbers. Covariate: the
+Day-2 recovery model's calibrated probability, computed as of due_date
+(`baseline_predicted_recovery` -- already established elsewhere in this
+file as "the Day-2 ML model's own prediction, identical for both arms of a
+given invoice", i.e. genuinely pre-treatment). Correlation with the outcome
+was real and non-trivial for both metrics (count-based r=0.557, giving
+17.0% SE reduction; amount r=0.465, giving 11.5%) -- both matched the
+theoretical `1-sqrt(1-r^2)` prediction almost exactly, which is itself a
+correctness check on the implementation, not just a feasibility number.
+
+**The rule, stated explicitly so it can't quietly erode**: CUPED is NEVER
+used to select which sign or which number gets reported, and the raw
+estimate is never dropped in favor of the CUPED-adjusted one.
+`app/attribution/cuped.py`'s every entry point returns both side by side.
+The only thing CUPED changes is precision (a smaller SE around the same
+underlying effect) -- if a future session is tempted to report "the CUPED
+number" alone because it looks better, that is exactly the failure mode
+this rule exists to block. `tests/test_attribution_cuped.py`'s unbiasedness
+test exists specifically to keep this honest: CUPED-adjusted and raw
+effects must both land close to the true effect on synthetic data with a
+known answer, never diverge toward "whichever looks more favorable."
+
+**theta is fit once, globally** (from the full pooled experiment
+population), not re-fit per slice -- re-fitting per slice would reintroduce
+exactly the small-n instability CUPED is meant to reduce, especially given
+several segment x action cells already sit under the existing 15-per-arm
+low-n dimming threshold. A real, honest consequence of this design choice,
+found while checking per-action slices during development: a globally-fit
+theta can occasionally *increase* variance for a specific slice rather than
+reduce it (observed for WAIT: se_reduction_pct ≈ -0.4%) when that slice's
+own local covariate-outcome relationship doesn't match the population-level
+one. Reported as-is (both raw and CUPED, honestly) rather than hidden or
+"fixed" by per-slice refitting.
+
+**Scope limit, deliberate, not an oversight**: CUPED's clean bias/variance
+guarantees apply to a simple difference-in-means. The existing "amount-
+weighted recovery rate" elsewhere in this module is a RATIO-of-sums
+estimator (`sum(recovered)/sum(amount)` per arm), which needs a different
+variance treatment (delta method) that was out of scope for this
+feasibility-gated build. What `cuped.py`'s `AMOUNT_METRIC` actually
+CUPED-adjusts is the simple per-invoice mean of `observed_recovery`
+(average rupees recovered per invoice, treatment minus control) -- a real,
+well-defined, complementary statistic, but explicitly NOT the same number
+as the amount-weighted recovery rate percentage shown elsewhere. Labeled as
+"average recovered amount per invoice" everywhere it's surfaced (API
+schema doc-comment, frontend) specifically to avoid conflating the two.
+
+**Wiring**: `GET /api/attribution?include_cuped=true` -- computed on
+demand from `load_attribution_data()`, never persisted (same pattern as
+`escalate_by_archetype`/`consistency_warnings`'s `include_diagnostics`
+gate, and independent of it -- CUPED isn't hidden-ground-truth-informed,
+so it has its own flag rather than being folded into that one). Pooled
+(portfolio-level) only for now, not per-segment/per-action -- `cuped.py`'s
+`compute_cuped_slice()` supports any segment/action cut already (it mirrors
+`compute_slice()`'s exact population-selection rule, verified by a
+cross-check test), so extending the API to expose per-slice CUPED later is
+a route change only, no new analysis code.

@@ -85,8 +85,10 @@ export function getMetrics(): Promise<MetricsResponse> {
 // GET /api/attribution. include_diagnostics deliberately left at its
 // default (false) -- those fields are gated hidden-ground-truth diagnostics
 // (see app/api/DECISIONS.md), not for a production-facing screen.
+// include_cuped=true is safe for production (not hidden-ground-truth-
+// informed) -- see app/attribution/cuped.py.
 export function getAttribution(): Promise<AttributionResponse> {
-  return fetchJson<AttributionResponse>("/api/attribution");
+  return fetchJson<AttributionResponse>("/api/attribution?include_cuped=true");
 }
 
 // GET /api/demo-fixtures
