@@ -2,8 +2,6 @@
 
 **Submission for Razorpay AI Buildathon 2026 — Track 03 (AI Revenue Recovery)**
 
-**Webstie Link : https://arbiter-brown-five.vercel.app/**
-
 Not a collections bot. A decision engine that, for every overdue B2B invoice, decides:
 
 - **Whether** chasing it is worth it (expected-value economics, not "email everyone")
@@ -21,7 +19,7 @@ Every recommendation is explainable end to end: the recovery-probability score, 
 
 | | |
 |---|---|
-| **App** | _add Vercel URL after deploy_ |
+| **App** |  https://arbiter-brown-five.vercel.app/ |
 | **API** | https://b2b-receivables-intelligence.onrender.com (`/docs` for interactive OpenAPI) |
 | **Video walkthrough** | _add link_ |
 
