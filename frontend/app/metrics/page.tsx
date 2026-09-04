@@ -198,25 +198,48 @@ export default async function MetricsPage() {
                 tone={signTone(metrics.attribution.incremental_net_recovery)}
                 sub="cost- and friction-adjusted"
               />
-              {attribution.cuped && (
-                <div className="rounded-card border border-dashed border-border-strong p-4">
-                  <div className="label mb-2 !text-text-faint">Variance-reduced estimate (CUPED)</div>
-                  {attribution.cuped
-                    .filter((c) => c.metric === "count" && c.raw_se != null && c.cuped_se != null)
-                    .map((c) => (
-                      <p key={c.metric} className="text-sm text-text-muted">
-                        Using the recovery model&apos;s pre-treatment probability as a covariate (r = {c.corr.toFixed(2)}),
-                        the count-based incremental recovery estimate&apos;s standard error tightens from{" "}
-                        <span className="text-text">±{((c.raw_se as number) * 100).toFixed(1)}pp</span> to{" "}
-                        <span className="text-text">±{((c.cuped_se as number) * 100).toFixed(1)}pp</span>
-                        {c.se_reduction_pct != null && <> ({c.se_reduction_pct.toFixed(0)}% smaller)</>} — the underlying
-                        effect (+{(c.cuped_effect * 100).toFixed(1)}pp vs. raw +{(c.raw_effect * 100).toFixed(1)}pp) stays
-                        close to the raw estimate, as it should: CUPED changes precision, not the answer, and is never
-                        used to prefer one number over the other.
+              {attribution.cuped &&
+                attribution.cuped
+                  .filter((c) => c.metric === "count" && c.raw_se != null && c.cuped_se != null)
+                  .map((c) => (
+                    <div key={c.metric} className="rounded-card border border-dashed border-border-strong p-4">
+                      <div className="label !text-text-faint">Variance-reduced estimate (CUPED)</div>
+                      <p className="mt-0.5 text-xs text-text-faint">
+                        Pre-treatment recovery probability as covariate (r = {c.corr.toFixed(2)})
                       </p>
-                    ))}
-                </div>
-              )}
+                      <div className="mt-3 grid grid-cols-3 gap-4">
+                        <div>
+                          <div className="text-[10px] tracking-wide text-text-faint uppercase">Raw effect</div>
+                          <div className="mt-0.5 font-mono-tabular text-lg font-semibold text-text">
+                            +{(c.raw_effect * 100).toFixed(1)}pp
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] tracking-wide text-text-faint uppercase">CUPED-adjusted</div>
+                          <div className="mt-0.5 font-mono-tabular text-lg font-semibold text-text">
+                            +{(c.cuped_effect * 100).toFixed(1)}pp
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] tracking-wide text-text-faint uppercase">Standard error</div>
+                          <div className="mt-0.5 font-mono-tabular text-lg font-semibold text-text">
+                            ±{((c.raw_se as number) * 100).toFixed(1)}pp
+                            <span className="text-text-faint"> → </span>
+                            <span className="text-status-success">±{((c.cuped_se as number) * 100).toFixed(1)}pp</span>
+                            {c.se_reduction_pct != null && (
+                              <span className="ml-1 text-xs font-normal text-text-faint">
+                                ({c.se_reduction_pct.toFixed(0)}% smaller)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <p className="mt-3 border-t border-border pt-2.5 text-xs text-text-muted">
+                        CUPED improves precision, not the underlying answer — never used to prefer one estimate over
+                        the other.
+                      </p>
+                    </div>
+                  ))}
             </div>
             <AttributionCompareChart headline={metrics.attribution} />
           </>

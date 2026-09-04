@@ -26,10 +26,10 @@ const STAGES: Stage[] = [
   },
   {
     key: "predict",
-    label: "Predict",
+    label: "Predict — Recovery, PTP & Root Cause",
     detail:
-      "Calibrated XGBoost models score recovery probability and promise-to-pay confidence, trained strictly point-in-time so no feature ever leaks the future.",
-    metric: "Recovery ROC-AUC 0.83",
+      "Three calibrated XGBoost models score recovery probability, promise-to-pay confidence, and root cause (cash-flow stress vs. oversight) — all trained strictly point-in-time so no feature ever leaks the future.",
+    metric: "Recovery 0.83 · PTP 0.84 · Root Cause 0.76",
     Icon: TrendingUp,
   },
   {

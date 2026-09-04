@@ -162,6 +162,52 @@ export default async function DecisionTracePage({
           </div>
         </div>
 
+        {/* Decisive summary row -- everything a recruiter needs before
+            scrolling, sized in deliberate reading-priority order (Amount
+            above already reads first; this row goes Recovery > Recommended
+            > Root cause > Expected value, biggest to smallest/most-muted).
+            Purely additive: every value here is already computed above for
+            the sections further down the page, just surfaced earlier too. */}
+        <div className="mt-6 grid grid-cols-2 gap-4 border-t border-border pt-5 sm:grid-cols-4">
+          <div>
+            <div className="label">Recovery</div>
+            {trace.model_scores.recovery_probability !== null ? (
+              <div className="mt-1 font-mono-tabular text-xl font-semibold text-text sm:text-2xl">
+                {formatPercent(trace.model_scores.recovery_probability)}
+              </div>
+            ) : (
+              <div className="mt-1 text-sm text-text-faint">Not scored</div>
+            )}
+          </div>
+          <div>
+            <div className="label">Recommended</div>
+            <div className="mt-1.5">
+              {recommendedAction ? <ActionBadge action={recommendedAction} /> : <span className="text-sm text-text-faint">—</span>}
+            </div>
+          </div>
+          <div>
+            <div className="label">Root cause</div>
+            {trace.model_scores.root_cause ? (
+              <div className="mt-1 text-sm font-medium text-text">
+                {ROOT_CAUSE_COPY[trace.model_scores.root_cause.predicted_label].label}{" "}
+                <span className="font-mono-tabular text-xs text-text-muted">
+                  {formatPercent(trace.model_scores.root_cause.confidence)}
+                </span>
+              </div>
+            ) : (
+              <div className="mt-1 text-sm text-text-faint">
+                {trace.policy_checks.is_disputed ? "Disputed" : "Not scored"}
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="label">Expected value</div>
+            <div className="mt-1 font-mono-tabular text-sm font-medium text-text-muted sm:text-base">
+              {recommendedCandidate ? formatCurrency(recommendedCandidate.expected_value) : "—"}
+            </div>
+          </div>
+        </div>
+
         <div className="mt-6 flex flex-wrap gap-x-6 gap-y-1 border-t border-border pt-4 text-sm text-text-muted">
           {JUMP_LINKS.map((l) => (
             <a key={l.href} href={l.href} className="transition-colors hover:text-accent-text">

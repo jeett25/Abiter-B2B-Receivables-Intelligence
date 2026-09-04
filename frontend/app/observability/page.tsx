@@ -32,10 +32,10 @@ function SafetyCheckRow({ label }: { label: string }) {
 export default function ObservabilityPage() {
   return (
     <div className="space-y-10">
-      <PageHeader title="Observability" subtitle="Evaluation results from the system's own build and test process." />
+      <PageHeader title="System Health" subtitle="Evaluation results from the system's own build and test process." />
 
       <section className="space-y-4">
-        <h2 className="section-heading">Model calibration</h2>
+        <h2 className="section-heading">Model Quality</h2>
         <div className="grid gap-4 md:grid-cols-3">
           <Card className="p-5 sm:p-6">
             <div className="label mb-4 !text-text-muted">Recovery probability model</div>
@@ -80,7 +80,7 @@ export default function ObservabilityPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 className="section-heading">Retrieval quality</h2>
+        <h2 className="section-heading">Retrieval Quality</h2>
         <Card className="p-5 sm:p-6">
           <div className="label mb-1 !text-text-muted">Hybrid retrieval — BM25 + pgvector + amount proximity, fused via Reciprocal Rank Fusion</div>
           <p className="mb-4 text-xs text-text-faint">
@@ -95,33 +95,39 @@ export default function ObservabilityPage() {
       </section>
 
       <section className="space-y-4">
-        <h2 className="section-heading">Agent &amp; LLM reliability</h2>
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card className="p-5 sm:p-6">
-            <div className="label mb-4 !text-text-muted">Promise-extraction LLM</div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-              <StatRow label="Model" value="Groq — gpt-oss-120b" />
-              <StatRow label="Mode" value="JSON mode, temp 0" />
-              <StatRow label="Retry policy" value="2 attempts" />
-              <StatRow label="Fallback on failure" value="null" />
-            </div>
-            <p className="mt-4 text-xs text-text-faint">
-              Extracts promises only — never judges credibility (that&rsquo;s the PTP model&rsquo;s job). Fails safe
-              to <span className="text-text-muted">null</span>, never fabricates one.
-            </p>
-          </Card>
-          <Card className="p-5 sm:p-6">
-            <div className="label mb-4 !text-text-muted">Final integration pass — safety checks</div>
-            <ul className="space-y-2">
-              <SafetyCheckRow label="No duplicate event processing" />
-              <SafetyCheckRow label="No policy-gate bypass" />
-              <SafetyCheckRow label="No business-hours violations" />
-              <SafetyCheckRow label="Every result has a real, non-placeholder score" />
-              <SafetyCheckRow label="No hidden-ground-truth identifiers leaked" />
-            </ul>
-            <p className="mt-3 text-xs text-text-faint">Run across the full 900-invoice live pool.</p>
-          </Card>
-        </div>
+        <h2 className="section-heading">LLM Reliability</h2>
+        <Card className="p-5 sm:p-6">
+          <div className="label mb-4 !text-text-muted">Promise-extraction LLM</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+            <StatRow label="Model" value="Groq — gpt-oss-120b" />
+            <StatRow label="Mode" value="JSON mode, temp 0" />
+            <StatRow label="Retry policy" value="2 attempts" />
+            <StatRow label="Fallback on failure" value="null" />
+          </div>
+          <p className="mt-4 text-xs text-text-faint">
+            Extracts promises only — never judges credibility (that&rsquo;s the PTP model&rsquo;s job). Fails safe
+            to <span className="text-text-muted">null</span>, never fabricates one.
+          </p>
+        </Card>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="section-heading">Runtime &amp; Safety</h2>
+        <p className="-mt-2 text-xs text-text-faint">
+          Not live infrastructure telemetry — these are results from the system&rsquo;s own automated test suite and
+          final integration pass, re-run on every change.
+        </p>
+        <Card className="p-5 sm:p-6">
+          <div className="label mb-4 !text-text-muted">Final integration pass — safety checks</div>
+          <ul className="space-y-2">
+            <SafetyCheckRow label="No duplicate event processing" />
+            <SafetyCheckRow label="No policy-gate bypass" />
+            <SafetyCheckRow label="No business-hours violations" />
+            <SafetyCheckRow label="Every result has a real, non-placeholder score" />
+            <SafetyCheckRow label="No hidden-ground-truth identifiers leaked" />
+          </ul>
+          <p className="mt-3 text-xs text-text-faint">Run across the full 900-invoice live pool.</p>
+        </Card>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <IconStat icon={ListChecks} label="Automated tests" value="312 / 315" tone="neutral" sub="passing, project-wide" />
           <IconStat icon={CheckCircle2} label="Safety checks" value="7 / 7" tone="success" sub="final integration pass" />

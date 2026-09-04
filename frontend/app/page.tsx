@@ -17,13 +17,13 @@ import { ConfidenceMeterVisual, NoiseVsSignalVisual, WastedSpendVisual } from ".
 // the proof-metrics section degrades gracefully rather than breaking the
 // whole page (this is a landing page, not a critical data screen).
 //
-// Framing note (2026-09-02): the flat pooled "measured incremental
-// recovery" figure is real but compositionally noisy at this sample size
-// (see CLAUDE.md's "Day 6, Phase C: metrics staleness bug + attribution
-// rerun" section) -- 3 of 4 channels show a genuine positive lift, one
-// (Escalate) doesn't, on a small enough sample that none of it clears a
-// reasonable significance bar. The per-channel chart below shows this
-// directly instead of hiding behind a single pooled number.
+// Framing note (2026-09-04): the per-channel lift chart below is shown
+// instead of a single flat pooled number because channel-level composition
+// legitimately varies -- it's a transparency choice, not a workaround for a
+// bad headline. Don't hardcode a specific channel's sign/direction in this
+// file's copy again: it changes with the dataset instance (see CLAUDE.md's
+// "CURRENT CANONICAL STATE" section for whatever is true right now) and a
+// hardcoded claim here has already gone stale once.
 
 const PROBLEMS = [
   {
@@ -193,8 +193,7 @@ export default async function LandingPage() {
             </p>
           )}
           <p className="mt-3 text-xs text-text-faint">
-            One channel (Escalate) shows a measured negative lift on a small sample — shown above, not
-            hidden. Full breakdown on the{" "}
+            Full per-channel and per-segment breakdown on the{" "}
             <Link href="/metrics" className="text-accent-text hover:underline">
               metrics page
             </Link>

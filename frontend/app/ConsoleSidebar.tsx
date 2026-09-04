@@ -20,7 +20,7 @@ import { cx } from "@/lib/ui";
 const NAV_ITEMS = [
   { href: "/invoices", label: "Invoices", icon: Receipt },
   { href: "/metrics", label: "Metrics", icon: LineChart },
-  { href: "/observability", label: "Observability", icon: Gauge },
+  { href: "/observability", label: "System Health", icon: Gauge },
 ];
 
 function iconForAction(action: string): ComponentType<{ size?: number; className?: string }> {
