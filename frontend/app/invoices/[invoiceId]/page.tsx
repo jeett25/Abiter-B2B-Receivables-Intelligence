@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import { ApiError, getDecision, getDemoFixtures, getInvoice, getTimeline } from "@/lib/api";
-import { ActionEV, DecisionTrace, DemoFixture, InvoiceSummary, InvoiceTimeline } from "@/lib/types";
+import { ActionEV, DecisionTrace, DemoFixture, InvoiceSummary, InvoiceTimeline, TimelineEntry } from "@/lib/types";
 import { ActionBadge, Badge, Card, ErrorPanel, PolicyBadge, StateBadge, formatCurrency, formatPercent } from "@/lib/ui";
 import RefreshButton from "../../RefreshButton";
 import RadialGauge from "../../RadialGauge";
@@ -36,6 +36,29 @@ function getStateTransitionPath(detail: Record<string, unknown>): string[] | nul
   if (!Array.isArray(path) || path.length === 0) return null;
   if (!path.every((s) => typeof s === "string")) return null;
   return path as string[];
+}
+
+// Labels each timeline round by what kind of thing actually happened,
+// derived only from real fields GET /api/invoices/{id}/timeline exposes per
+// round (never fabricated) -- a fixture that's been rehearsed across
+// several sessions can have genuinely different-natured rounds on one
+// timeline (a plain assessment, a reassessment, a tool failure, a safety
+// closure), and without this a viewer has to reconstruct which is which
+// from the summary text alone. Priority order matters: is_actually_paid
+// and error are checked before the generic trigger-event classification
+// since they can co-occur with any trigger event type.
+function classifyRound(entry: TimelineEntry): { label: string; tone: "wait" | "remind" | "escalate" | "dispute" | "success" | "danger" | "neutral" } {
+  if (entry.type === "payment") return { label: "Payment", tone: "success" };
+  const d = entry.detail;
+  if (d.is_actually_paid === true) return { label: "Safety closure", tone: "success" };
+  if (typeof d.error === "string") return { label: "Execution failure", tone: "danger" };
+  if (d.policy_result === "blocked") return { label: "Policy block", tone: "danger" };
+  if (d.policy_result === "escalated") return { label: "Escalated", tone: "escalate" };
+  const trigger = d.trigger_event_type;
+  if (trigger === "promise.created") return { label: "Promise created", tone: "remind" };
+  if (trigger === "promise.broken" || trigger === "review.timeout") return { label: "Reassessment", tone: "escalate" };
+  if (trigger === "customer.responded") return { label: "Customer response", tone: "neutral" };
+  return { label: "Decision", tone: "neutral" };
 }
 
 function daysOverdue(dueDate: string): number {
@@ -438,10 +461,14 @@ export default async function DecisionTracePage({
                 // right below itself.
                 const showPath = path && path.length > 1;
                 const EventIcon = event.type === "payment" ? Receipt : Gavel;
+                const round = classifyRound(event);
                 return (
                   <li key={i} className="relative text-xs">
                     <span className="absolute -left-[19px] top-1 h-2 w-2 rounded-full bg-accent ring-4 ring-bg" />
-                    <div className="font-mono-tabular text-text-faint">{new Date(event.timestamp).toLocaleString("en-IN")}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono-tabular text-text-faint">{new Date(event.timestamp).toLocaleString("en-IN")}</span>
+                      <Badge tone={round.tone}>{round.label}</Badge>
+                    </div>
                     <div className="mt-0.5 flex items-start gap-1.5 text-text">
                       <EventIcon size={12} className="mt-0.5 shrink-0 text-text-faint" aria-hidden />
                       <span>{event.summary}</span>

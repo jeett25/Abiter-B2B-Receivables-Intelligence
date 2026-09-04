@@ -142,6 +142,21 @@ def get_timeline(invoice_id: UUID, db: Annotated[Session, Depends(get_db)]):
         state_transition_path = log.policy_checks.get("state_transition_path")
         if state_transition_path:
             detail["state_transition_path"] = state_transition_path
+        # Added so the frontend can label each round (decision / reassessment
+        # / safety closure / execution failure) without guessing from the
+        # summary text -- same fields DecisionTrace already exposes via
+        # policy_checks/evidence for the LATEST round, just also surfaced
+        # per-round here since a fixture's timeline can span several rounds
+        # with genuinely different characters.
+        trigger_event = (log.evidence or {}).get("trigger_event") or {}
+        if trigger_event.get("event_type"):
+            detail["trigger_event_type"] = trigger_event["event_type"]
+        if log.policy_checks.get("policy_result"):
+            detail["policy_result"] = log.policy_checks["policy_result"]
+        if log.policy_checks.get("is_actually_paid"):
+            detail["is_actually_paid"] = log.policy_checks["is_actually_paid"]
+        if log.policy_checks.get("error"):
+            detail["error"] = log.policy_checks["error"]
         events.append(
             TimelineEntry(
                 timestamp=log.timestamp,

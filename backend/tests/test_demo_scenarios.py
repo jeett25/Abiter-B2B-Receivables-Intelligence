@@ -91,27 +91,26 @@ def test_low_value_scenario_gets_a_cheap_nudge_not_a_blind_stop(db_session):
 
 
 def test_high_value_scenario_takes_an_active_intervention(db_session):
-    """Day 1's 'act' label is shorthand for "some active intervention", not
-    a specific ActionType -- any of the five real actionable types satisfies
-    it. STOP is ALSO accepted (2026-09-02): this invoice does double duty as
+    """Re-pinned 2026-09-04 to INV-10023 (~10.3% recovery probability, real
+    ₹500,000 invoice) -- see synthetic/demo_fixtures.py's comment for why
+    the previous pin (INV-10706) stopped fitting once its own recovery
+    probability organically drifted to ~0.95 post-ML-retrain. Day 1's 'act'
+    label is shorthand for "some active intervention", not a specific
+    ActionType -- any of the five real actionable types satisfies it.
+
+    STOP is ALSO accepted: this invoice does double duty as
     app/agent/simulate_scenarios.py's Scenario A ("successful recovery"),
     whose own narrative deliberately ends with the invoice paid -- if that
     script has run more recently than this test, decide() correctly sees a
     real completed payment and returns STOP via the already-paid policy
-    rule, which is the Day-5/6-correct outcome for THAT state, not a
-    regression. Run synthetic.seed_demo's reset_and_reassess first if you
-    specifically need this test to reflect the pre-Scenario-A state.
+    rule, not a regression. Run synthetic.seed_demo's reset_and_reassess
+    first if you specifically need this test to reflect the pre-Scenario-A
+    state.
 
-    WAIT is ALSO accepted (2026-09-03): the recovery model was retrained
-    after fixing a real survivorship-bias bug (Day 5's attribution write-back
-    only ever flips a formerly-live invoice to PAID when it recovered, which
-    had been silently collapsing the most recent training slice to 100%
-    positive -- see docs/ml-DECISIONS.md and app/ml/features.py's
-    organic_historical_mask()). Against the corrected model this invoice's
-    recovery_probability is a genuinely high ~0.95, and diminishing-returns
-    economics correctly finds no active intervention clears its cost/
-    materiality floor. The honest answer from a more accurate model, not a
-    regression -- same precedent as low_value_stop's own history below."""
+    WAIT is ALSO accepted, purely as a robustness margin against future
+    drift (e.g. accumulated prior_contact_count from many rehearsal reruns
+    eventually shifting cost/friction) -- not expected against INV-10023's
+    current, robustly-active-favoring economics."""
     fixtures = _load_fixtures()
     decision = _decide_by_invoice_number(db_session, fixtures["high_value_act"]["invoice_number"])
     assert decision.final_action in ACTIVE_INTERVENTIONS or decision.final_action in (ActionType.STOP, ActionType.WAIT)

@@ -188,15 +188,19 @@ def check_low_value_stop(result: dict) -> tuple[bool, str]:
 
 
 def check_high_value_act(result: dict) -> tuple[bool, str]:
-    # STOP and WAIT are both also accepted (2026-09-03), same "honest answer
-    # over forced label" precedent as check_low_value_stop below. STOP: this
-    # invoice does double duty as Scenario A's paid-invoice narrative. WAIT:
-    # after the 2026-09-03 recovery-model retrain (fixed a survivorship-bias
-    # bug that had been inflating recent-history "always recovers" rows --
-    # see docs/ml-DECISIONS.md), this invoice's recovery_probability is a
-    # genuinely high ~0.95, and diminishing-returns economics correctly finds
-    # no active intervention clears its cost/materiality floor. Not a
-    # regression -- a more accurate model producing a more honest answer.
+    # Re-pinned 2026-09-04 to INV-10023 (~10.3% recovery probability, real
+    # ₹500,000 invoice) after the previous pin (INV-10706) organically
+    # drifted to ~0.95 recovery probability post-ML-retrain, making WAIT the
+    # honest economics answer and quietly duplicating reliable_payer_wait's
+    # story -- see synthetic/demo_fixtures.py's comment for the full
+    # history. A fresh assessment on INV-10023 should robustly pick an
+    # active intervention now. STOP is still accepted: this invoice does
+    # double duty as Scenario A's paid-invoice narrative, so if that
+    # rehearsal ran more recently than this check, decide() correctly sees
+    # a real completed payment and returns STOP via the already-paid rule --
+    # not a regression. WAIT stays accepted too, purely for robustness
+    # against future drift (e.g. accumulated prior_contact_count from many
+    # reruns eventually affecting cost/friction) -- not expected today.
     action = result.get("selected_action")
     active_actions = {ActionType.EMAIL, ActionType.WHATSAPP, ActionType.PAYMENT_LINK, ActionType.VOICE, ActionType.ESCALATE}
     ok = action in active_actions or action in (ActionType.STOP, ActionType.WAIT)

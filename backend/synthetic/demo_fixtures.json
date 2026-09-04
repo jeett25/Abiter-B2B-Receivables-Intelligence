@@ -16,7 +16,7 @@
     "expected_action": "stop"
   },
   "high_value_act": {
-    "invoice_number": "INV-10706",
+    "invoice_number": "INV-10023",
     "expected_action": "act"
   },
   "already_paid_suppress": {

@@ -84,6 +84,23 @@ SCENARIOS: dict[str, dict] = {
     "high_value_act": {
         "archetypes": ["chronic_late"],
         "order": "amount_desc",
+        # NOTE (2026-09-04): demo_fixtures.json's actual pinned invoice for
+        # this key is manually overridden to INV-10023, NOT re-derived from
+        # this scenario's own selection criteria. History: the original pin
+        # (INV-10706) organically drifted after a real ML retrain fixed a
+        # survivorship-bias bug (see docs/ml-DECISIONS.md) -- its recovery
+        # probability rose to ~0.95, at which point diminishing-returns
+        # economics correctly started picking WAIT instead of an active
+        # channel, quietly turning "successful recovery, worth real effort"
+        # into a duplicate of reliable_payer_wait's own no-intervention
+        # story. INV-10023 fixes this: real ₹500,000 invoice, ~10.3%
+        # recovery probability today, robustly justifying VOICE on its own
+        # economics merit (not a razor-thin margin like low_value_stop's).
+        # Re-running select_demo_fixtures() would silently discard this pin
+        # and select an ordinary OVERDUE-state invoice instead (this one has
+        # already transitioned to `remind`, so the query wouldn't even find
+        # it); don't run it for this key without updating this comment
+        # together with app/agent/simulate_scenarios.py's scenario_a.
         "expected_action": "act",
     },
     "already_paid_suppress": {

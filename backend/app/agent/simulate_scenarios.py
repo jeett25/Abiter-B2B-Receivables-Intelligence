@@ -48,7 +48,7 @@ from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.agent import nodes
 from app.agent.events import Event, EventType
@@ -57,12 +57,59 @@ from app.agent.scanners import scan_for_broken_promises
 from app.agent.state_machine import TransitionContext, determine_next_state
 from app.core.db import SessionLocal
 from app.decision.service import DEFAULT_AS_OF, run_full_live_pass
-from app.models import Invoice, Payment
+from app.models import DecisionLog as DecisionLogModel
+from app.models import Invoice, Payment, PaymentPromise
 from app.models.enums import AccountCurrentState, ActionType, InvoiceStatus
 
 FIXTURES = json.loads((Path(__file__).parent.parent.parent / "synthetic" / "demo_fixtures.json").read_text())
 DAY1 = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
 DAY10 = DAY1 + timedelta(days=10)
+
+# Must match synthetic/seed_demo.py's SYNTHETIC_PAYMENT_METHODS exactly --
+# both are the only places in the codebase that ever write these literal
+# method strings, so deleting by them can never remove an organic
+# generator-created payment (see seed_demo.py's own comment for the
+# already_paid_suppress incident that established this boundary).
+SYNTHETIC_PAYMENT_METHODS = ("attribution_simulation", "scenario_rehearsal")
+
+
+def _clear_prior_rounds(invoice_id) -> None:
+    """Deletes any decision_logs/payment_promises/synthetic-payment left
+    over from a PRIOR rehearsal of this same fixture, so this run produces
+    exactly one clean narrative.
+
+    Why this exists: decision_logs sort by business timestamp
+    (`Event.occurred_at`), not by when a script actually ran. This module's
+    scenarios use fixed DAY1/DAY10 timestamps (2026-08-24 / 2026-09-03) --
+    chronologically EARLIER than synthetic/seed_demo.py's DEFAULT_AS_OF
+    (~2026-08-27). So if seed_demo.py's reset_and_reassess() ran first
+    (real execution order) and left its own DEFAULT_AS_OF-timestamped row
+    behind, that row would sort in the MIDDLE of (or after) this scenario's
+    own DAY1..DAY10 timeline once this scenario runs -- a confusing "ghost
+    round" a viewer can't place, and exactly what made the tool-failure and
+    broken-promise demos read as contradictory. Clearing first, every time,
+    makes this scenario's own narrative the only one on record regardless
+    of what ran before it or how many times this has been rehearsed across
+    past sessions."""
+    session = SessionLocal()
+    try:
+        synthetic_ids = (
+            session.execute(
+                select(Payment.id).where(Payment.invoice_id == invoice_id, Payment.method.in_(SYNTHETIC_PAYMENT_METHODS))
+            )
+            .scalars()
+            .all()
+        )
+        if synthetic_ids:
+            session.execute(delete(Payment).where(Payment.id.in_(synthetic_ids)))
+            invoice = session.get(Invoice, invoice_id)
+            invoice.status = InvoiceStatus.OPEN
+            invoice.paid_at = None
+        session.execute(delete(DecisionLogModel).where(DecisionLogModel.invoice_id == invoice_id))
+        session.execute(delete(PaymentPromise).where(PaymentPromise.invoice_id == invoice_id))
+        session.commit()
+    finally:
+        session.close()
 
 
 def _banner(title: str) -> None:
@@ -96,6 +143,7 @@ def _invoice_row(invoice_id):
 def scenario_a_successful() -> None:
     _banner("SCENARIO A -- successful recovery: OVERDUE -> assess -> contact -> payment -> CLOSED_PAID")
     invoice_id = _invoice_id_by_number(FIXTURES["high_value_act"]["invoice_number"])
+    _clear_prior_rounds(invoice_id)
 
     overdue = run_invoice(
         invoice_id, event=Event(event_type=EventType.INVOICE_OVERDUE, invoice_id=invoice_id, occurred_at=DAY1), persist=True
@@ -153,6 +201,7 @@ def scenario_a_successful() -> None:
 def scenario_b_broken_promise() -> None:
     _banner("SCENARIO B -- broken promise: OVERDUE -> promise -> broken -> REASSESS -> next action")
     invoice_id = _invoice_id_by_number(FIXTURES["promise_breaker_reassess"]["invoice_number"])
+    _clear_prior_rounds(invoice_id)
 
     promise_event = Event(
         event_type=EventType.CUSTOMER_RESPONDED,
@@ -213,6 +262,7 @@ def scenario_c_dispute() -> None:
 def scenario_d_already_paid() -> None:
     _banner("SCENARIO D -- already paid (false alarm): ledger check catches it despite invoices.status='open'")
     invoice_id = _invoice_id_by_number(FIXTURES["already_paid_suppress"]["invoice_number"])
+    _clear_prior_rounds(invoice_id)
 
     result = run_invoice(
         invoice_id, event=Event(event_type=EventType.INVOICE_OVERDUE, invoice_id=invoice_id, occurred_at=DAY1), persist=True
@@ -267,6 +317,7 @@ def scenario_e_low_value() -> None:
 def scenario_g_correct_abstention() -> None:
     _banner("SCENARIO G -- correct abstention: OVERDUE -> assess -> WAIT (no intervention) -> payment -> CLOSED_PAID")
     invoice_id = _invoice_id_by_number(FIXTURES["reliable_payer_wait"]["invoice_number"])
+    _clear_prior_rounds(invoice_id)
 
     overdue = run_invoice(
         invoice_id, event=Event(event_type=EventType.INVOICE_OVERDUE, invoice_id=invoice_id, occurred_at=DAY1), persist=True
@@ -323,6 +374,7 @@ def scenario_g_correct_abstention() -> None:
 def scenario_f_tool_failure() -> None:
     _banner("SCENARIO F -- tool/LLM failure: action -> failure -> retry -> fallback -> safe state -> audit")
     invoice_id = _invoice_id_by_number(FIXTURES["chronic_late_escalate"]["invoice_number"])
+    _clear_prior_rounds(invoice_id)
 
     def _forced_failure(*, invoice_number, amount, now, failure_mode=False):
         return {

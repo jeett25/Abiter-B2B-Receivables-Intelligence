@@ -37,7 +37,7 @@ _LABELS = {
     "promise_breaker_reassess": "Broken promise",
     "already_paid_suppress": "Already paid (false alarm)",
     "chronic_late_escalate": "Tool/LLM failure (forced, rehearsed)",
-    "reliable_payer_wait": "Reliable payer (correct abstention)",
+    "reliable_payer_wait": "High-confidence abstention",
     "low_value_stop": "Low value (cheapest justified action)",
 }
 
@@ -52,11 +52,11 @@ _LABELS = {
 # no drift risk) rather than duplicated in the frontend.
 _EXPLANATIONS = {
     "reliable_payer_wait": (
-        "This invoice was eligible for real intervention under the randomized holdout experiment -- "
-        "nothing external prevented the system from acting. The model identified a high-probability "
-        "organic recovery (99%) and chose not to spend on intervention. The invoice was later "
-        "recovered after the system chose not to intervene, demonstrating deliberate abstention, not "
-        "a missed opportunity."
+        "Arbiter predicted 99% recovery and chose WAIT while the invoice was still eligible for "
+        "intervention -- nothing external prevented it from acting. A later payment confirmed the "
+        "account recovered without an intervention. The STOP shown in the current state is a later "
+        "safety closure after the payment was recorded, not the original recommendation -- see the "
+        "Timeline below for the actual sequence."
     ),
     "chronic_late_escalate": (
         "This invoice's real, economically-justified action is VOICE. To prove the system doesn't "
@@ -84,9 +84,11 @@ _EXPLANATIONS = {
         "scenario.)"
     ),
     "high_value_act": (
-        "A high-value invoice from a higher-risk customer -- worth real effort, unlike the abstention "
-        "cases above. This scenario also manually injects a payment-received event to demonstrate the "
-        "account correctly closing out once money actually arrives."
+        "A ₹500,000 invoice from a genuinely higher-risk customer (~10% organic recovery probability) "
+        "-- economically worth a real, assertive channel, unlike the abstention cases above. A fresh "
+        "assessment dispatches VOICE for real, then this scenario manually injects a payment-received "
+        "event to demonstrate the full chain: active intervention, then payment, then the account "
+        "correctly closing out to CLOSED_PAID."
     ),
     "already_paid_suppress": (
         "A real payment already exists for this invoice, but its status field hasn't been reconciled "
