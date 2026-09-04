@@ -28,17 +28,17 @@ _FIXTURES_PATH = Path(__file__).parent.parent.parent.parent / "synthetic" / "dem
 
 # Human-readable labels -- demo_fixtures.json's own keys are stable
 # identifiers (see its own history in CLAUDE.md/seed_demo.py), not meant for
-# display. 4 of these map directly onto app/agent/simulate_scenarios.py's
-# named scenarios (A/B/D/F); the other 2 (reliable_payer_wait, low_value_stop)
-# are real Day-1 curated cases without their own lettered scenario, included
-# anyway since they're genuine, useful abstention examples.
+# display. 5 of these map directly onto app/agent/simulate_scenarios.py's
+# named scenarios (A/B/D/F/G, the last added 2026-09-04); the other
+# (low_value_stop) is a real Day-1 curated case without its own lettered
+# scenario, included anyway since it's a genuine, useful economics example.
 _LABELS = {
     "high_value_act": "Successful recovery",
     "promise_breaker_reassess": "Broken promise",
     "already_paid_suppress": "Already paid (false alarm)",
     "chronic_late_escalate": "Tool/LLM failure (forced, rehearsed)",
     "reliable_payer_wait": "Reliable payer (correct abstention)",
-    "low_value_stop": "Low value (correct abstention)",
+    "low_value_stop": "Low value (cheapest justified action)",
 }
 
 # 2026-09-03: added after a real gap was found -- the menu label alone gives
@@ -52,31 +52,36 @@ _LABELS = {
 # no drift risk) rather than duplicated in the frontend.
 _EXPLANATIONS = {
     "reliable_payer_wait": (
-        "This customer was assigned to the untreated control group of the randomized holdout "
-        "experiment -- no email, call, or reminder was ever sent. The engine's own decision, before "
-        "any outcome was known, was WAIT with 99% predicted confidence. The invoice was paid in full "
-        "anyway, with zero intervention: real, measured proof the abstention was correct, not just a "
-        "plausible-sounding one."
+        "This invoice was eligible for real intervention under the randomized holdout experiment -- "
+        "nothing external prevented the system from acting. The model identified a high-probability "
+        "organic recovery (99%) and chose not to spend on intervention. The invoice was later "
+        "recovered after the system chose not to intervene, demonstrating deliberate abstention, not "
+        "a missed opportunity."
     ),
     "chronic_late_escalate": (
         "This invoice's real, economically-justified action is VOICE. To prove the system doesn't "
         "panic or improvise when a tool call fails, this run deliberately forces the voice-call API "
         "to fail. Watch it retry, exhaust its retries, and safely fall back to WAIT -- recording the "
         "failure honestly instead of guessing a different channel. This is the resilience design "
-        "working as intended, not a bug."
+        "working as intended, not a bug. (Its 'Attribution' badge reflects a separate, retrospective "
+        "measurement label from the Day-5 experiment -- that label never gates the live agent's real "
+        "dispatch, which independently evaluates and acts on every live invoice regardless of group.)"
     ),
     "promise_breaker_reassess": (
         "A real (simulated) customer WhatsApp message is sent, a live LLM call extracts a payment "
         "promise from it, and once that promise is confirmed broken, the system automatically "
         "reassesses and produces a fresh decision -- demonstrating the event-driven reassessment "
-        "loop, not a one-shot script. Because it calls a live LLM, the exact outcome can vary "
-        "slightly run to run."
+        "loop, not a one-shot script. This exact run was rehearsed and persisted ahead of time, so "
+        "what you're viewing now is fixed; only a fresh rerun of the rehearsal script would call the "
+        "LLM again and could vary slightly."
     ),
     "low_value_stop": (
         "Even for a customer archetype with weaker payment history, this invoice is small enough "
-        "that most interventions would cost more than there is to recover. The engine picks the "
-        "cheapest available nudge (or nothing) instead of over-spending to chase a small amount -- "
-        "the same abstention discipline as the reliable-payer case above, for a different reason."
+        "that most interventions net only a little more than doing nothing. The engine still picks "
+        "the cheapest economically-justified action rather than an expensive channel -- correct cost "
+        "discipline, distinct from the reliable-payer case above, which abstains entirely. (Its "
+        "'Attribution' badge is the same retrospective, non-gating label described on the tool-failure "
+        "scenario.)"
     ),
     "high_value_act": (
         "A high-value invoice from a higher-risk customer -- worth real effort, unlike the abstention "

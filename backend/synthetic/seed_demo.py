@@ -51,7 +51,7 @@ from app.agent.events import Event, EventType
 from app.agent.graph import run_invoice
 from app.core.db import SessionLocal
 from app.decision.service import DEFAULT_AS_OF
-from app.models import AccountState, Invoice, Payment, PaymentPromise
+from app.models import Invoice, Payment, PaymentPromise
 from app.models import DecisionLog as DecisionLogModel
 from app.models.enums import AccountCurrentState, ActionType, InvoiceStatus
 
@@ -125,44 +125,6 @@ def reset_and_reassess(invoice_number: str, as_of=DEFAULT_AS_OF) -> dict:
     return run_invoice(invoice_id, event=event, persist=True)
 
 
-def verify_reliable_payer_wait(invoice_number: str) -> dict:
-    """reliable_payer_wait (2026-09-03: re-pinned to INV-10765) is
-    deliberately NOT put through reset_and_reassess() like the other 5
-    fixtures -- it's real, unscripted proof that a WAIT decision was
-    correct: assigned to the Day-5 attribution experiment's control arm (no
-    intervention), it recovered on its own. Running the normal reset would
-    delete its real attribution_simulation payment and wipe the
-    decision_logs history that makes this fixture meaningful (the original
-    WAIT assessment, followed by the honestly-labeled "recovered via the
-    attribution experiment" closing entry) -- destroying exactly the
-    evidence this fixture exists to show. It also CAN'T be reassessed fresh
-    even if we wanted to: invoices.status is genuinely PAID (unlike
-    already_paid_suppress's deliberately-still-open ledger mismatch), so it
-    no longer appears in build_live_feature_table()'s open pool at all.
-    This reads the real persisted history instead of trying to reproduce
-    it."""
-    session = SessionLocal()
-    try:
-        invoice_id = _get_invoice_id(session, invoice_number)
-        account_state = session.execute(
-            select(AccountState).where(AccountState.invoice_id == invoice_id)
-        ).scalar_one_or_none()
-        had_real_wait_decision = (
-            session.execute(
-                select(DecisionLogModel.id).where(
-                    DecisionLogModel.invoice_id == invoice_id, DecisionLogModel.decision == "wait"
-                )
-            ).first()
-            is not None
-        )
-        return {
-            "current_state": account_state.current_state if account_state else None,
-            "had_real_wait_decision": had_real_wait_decision,
-        }
-    finally:
-        session.close()
-
-
 # -- Concrete, falsifiable expected outcome per fixture ------------------
 # Each returns (passed: bool, detail: str), checked against the FRESH
 # run_invoice() result every time -- never eyeballed, never read from
@@ -170,16 +132,18 @@ def verify_reliable_payer_wait(invoice_number: str) -> dict:
 
 
 def check_reliable_payer_wait(result: dict) -> tuple[bool, str]:
-    # Reads verify_reliable_payer_wait()'s output, not reset_and_reassess()'s
-    # -- see that function's docstring for why this fixture is read-only.
-    state = result.get("current_state")
-    had_wait = result.get("had_real_wait_decision")
-    ok = state == AccountCurrentState.CLOSED_PAID and had_wait is True
-    return (
-        ok,
-        f"current_state={state.value if state else None}, had_real_wait_decision={had_wait} "
-        "(expected CLOSED_PAID with a real WAIT decision on record before it)",
-    )
+    # Re-pinned 2026-09-04 to INV-10545 (see synthetic/demo_fixtures.py's
+    # comment for the full history of why the previous pin, INV-10765,
+    # broke). This fixture now goes through the same reset_and_reassess()
+    # path as the other 5: a fresh assessment must resolve to WAIT on its
+    # own economics merit -- that IS the fixture's whole point, unlike
+    # check_high_value_act below which accepts several outcomes. The "later
+    # paid, no intervention preceded it" epilogue is a separate, deliberate
+    # step -- app/agent/simulate_scenarios.py's scenario_g_correct_abstention,
+    # run after this check passes, mirrors Scenario A's payment injection.
+    action = result.get("selected_action")
+    ok = action == ActionType.WAIT
+    return ok, f"selected_action={action.value if action else None} (expected WAIT -- correct abstention on a high-recovery-probability invoice)"
 
 
 def check_chronic_late_escalate(result: dict) -> tuple[bool, str]:
@@ -260,15 +224,11 @@ def seed_demo() -> bool:
     fixtures = _load_fixtures()
     results: dict[str, dict] = {}
 
-    print("Resetting 5 demo fixtures (cleans up any Day-5 write-back artifacts, re-runs the current agent fresh)")
-    print("and verifying reliable_payer_wait's real persisted history (never reset -- see its check's docstring)...")
+    print("Resetting all 6 demo fixtures (cleans up any Day-5 write-back / scenario-rehearsal artifacts, re-runs the current agent fresh)...")
     for key, fixture in fixtures.items():
         invoice_number = fixture["invoice_number"]
         print(f"  {key} ({invoice_number})...")
-        if key == "reliable_payer_wait":
-            results[key] = verify_reliable_payer_wait(invoice_number)
-        else:
-            results[key] = reset_and_reassess(invoice_number)
+        results[key] = reset_and_reassess(invoice_number)
 
     print("\nDrift check (PASS/WARN per fixture, against FRESH results):")
     all_passed = True

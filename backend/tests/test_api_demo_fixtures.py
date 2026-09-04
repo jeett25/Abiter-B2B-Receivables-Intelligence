@@ -27,10 +27,11 @@ def test_get_demo_fixtures_returns_all_6_with_a_real_explanation_each():
         assert len(f["explanation"]) > 40
 
 
-def test_reliable_payer_wait_resolves_to_the_2026_09_03_repin():
-    # INV-10765, not the original INV-10330 -- see CLAUDE.md and
-    # synthetic/seed_demo.py's verify_reliable_payer_wait().
+def test_reliable_payer_wait_resolves_to_the_2026_09_04_repin():
+    # INV-10545, not INV-10765 or the original INV-10330 -- see
+    # synthetic/demo_fixtures.py's comment for the full history of why the
+    # INV-10765 pin broke and was replaced.
     resp = client.get("/api/demo-fixtures")
     body = resp.json()
     fixture = next(f for f in body if f["key"] == "reliable_payer_wait")
-    assert fixture["invoice_number"] == "INV-10765"
+    assert fixture["invoice_number"] == "INV-10545"

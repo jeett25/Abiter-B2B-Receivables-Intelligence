@@ -25,18 +25,34 @@ SCENARIOS: dict[str, dict] = {
     "reliable_payer_wait": {
         "archetypes": ["reliable_payer"],
         "order": "amount_asc",
-        # NOTE (2026-09-03): demo_fixtures.json's actual pinned invoice for
-        # this key was manually overridden to INV-10765, NOT re-derived from
-        # this scenario's own selection criteria -- see CLAUDE.md and
-        # synthetic/seed_demo.py's verify_reliable_payer_wait(). INV-10765 is
-        # a real (formerly-live, Day-5-attribution-control-arm) invoice that
-        # organically recovered with zero intervention -- concrete proof a
-        # WAIT decision was correct, stronger than any still-open invoice
-        # this query could select. Re-running select_demo_fixtures() would
-        # silently discard that override and re-pin an ordinary open
-        # invoice; don't run it for this key without updating this comment
-        # and seed_demo.py's special-casing together.
-        "expected_action": "stop",
+        # NOTE (2026-09-04): demo_fixtures.json's actual pinned invoice for
+        # this key is manually overridden to INV-10545, NOT re-derived from
+        # this scenario's own selection criteria. History: this key was
+        # previously pinned to INV-10765 specifically because it had already
+        # organically recovered via the Day-5 attribution control arm --
+        # "concrete proof a WAIT decision was correct." That pin broke: by
+        # the time it was actually recorded, the closing decision_logs entry
+        # (dated at DEFAULT_AS_OF for ordering reasons) sorted AFTER the
+        # invoice's real payment date, making the demo page read as
+        # "recommended WAIT, then chose STOP, after already being paid
+        # weeks earlier" -- a confusing, backwards-looking story. Root
+        # cause: any invoice resolved through the attribution experiment's
+        # organic simulation has a payment date anchored to its own
+        # due_date, which is structurally almost always BEFORE the fixed
+        # decision-engine clock (DEFAULT_AS_OF) -- so "assessed, then later
+        # paid" can never read cleanly from an already-resolved invoice.
+        # INV-10545 fixes this the same way high_value_act/Scenario A does:
+        # a genuinely still-open invoice (99% recovery probability, real
+        # WAIT decision, in the experiment's ACTED/treatment arm so nothing
+        # external suppressed action either) plus a deliberate, deterministic
+        # follow-up rehearsal (app/agent/simulate_scenarios.py's
+        # scenario_g_correct_abstention) that injects a payment dated AFTER
+        # the WAIT decision on purpose. Re-running select_demo_fixtures()
+        # would silently discard this pin and select an ordinary open
+        # invoice instead; don't run it for this key without updating this
+        # comment together with simulate_scenarios.py's scenario_g and
+        # seed_demo.py's check_reliable_payer_wait.
+        "expected_action": "wait",
     },
     "chronic_late_escalate": {
         "archetypes": ["chronic_late"],

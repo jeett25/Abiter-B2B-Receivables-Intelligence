@@ -19,7 +19,6 @@ from app.core.db import engine
 from app.decision.service import decide
 from app.models import Invoice
 from app.models.enums import ActionType, PolicyResult
-from synthetic.seed_demo import check_reliable_payer_wait, verify_reliable_payer_wait
 
 FIXTURES_PATH = Path(__file__).parent.parent / "synthetic" / "demo_fixtures.json"
 ACTIVE_INTERVENTIONS = {ActionType.EMAIL, ActionType.WHATSAPP, ActionType.PAYMENT_LINK, ActionType.VOICE, ActionType.ESCALATE}
@@ -37,15 +36,14 @@ def _decide_by_invoice_number(db_session, invoice_number: str):
 
 
 def test_reliable_payer_scenario_waits(db_session):
-    """Re-pinned 2026-09-03 to INV-10765, a real invoice no longer eligible
-    for a fresh decide() call at all -- see
-    synthetic/seed_demo.py's verify_reliable_payer_wait() docstring. This
-    now checks the real persisted proof (WAIT was decided, then the
-    invoice organically recovered) instead of re-deciding it."""
+    """Re-pinned 2026-09-04 to INV-10545 (see synthetic/demo_fixtures.py's
+    comment for why the previous pin, INV-10765, broke once the Day-5
+    attribution write-back resolved it). This invoice is genuinely still
+    open, so it's back to a normal fresh decide() call: a 99%-recovery-
+    probability invoice should resolve to WAIT on its own economics merit."""
     fixtures = _load_fixtures()
-    result = verify_reliable_payer_wait(fixtures["reliable_payer_wait"]["invoice_number"])
-    passed, detail = check_reliable_payer_wait(result)
-    assert passed, detail
+    decision = _decide_by_invoice_number(db_session, fixtures["reliable_payer_wait"]["invoice_number"])
+    assert decision.final_action == ActionType.WAIT
 
 
 def test_chronic_late_scenario_now_gets_voice_not_escalate(db_session):

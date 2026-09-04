@@ -105,6 +105,14 @@ export default async function DecisionTracePage({
   );
   const selectedAction = trace.policy_checks.selected_action ?? trace.policy_checks.final_action;
   const policyResult = trace.policy_checks.policy_result ?? trace.policy_checks.result;
+  // Policy ALLOWED the proposed action but the tool itself failed and the
+  // system safely fell back -- distinct from a policy override (blocked/
+  // escalated), which never has a tool_result at all. See SafetyList below
+  // for the same distinction applied to the safety-handling card.
+  const retryCount = trace.policy_checks.retry_count;
+  const toolFailedWithFallback = Boolean(
+    policyResult === "allowed" && trace.policy_checks.tool_result && !trace.policy_checks.tool_result.success
+  );
   const overdue = daysOverdue(invoice.due_date);
   const hasAnyGauge = trace.model_scores.recovery_probability !== null || trace.model_scores.ptp_probability !== null;
 
@@ -314,7 +322,7 @@ export default async function DecisionTracePage({
         <Card id="economics" className="p-4 sm:p-5 md:col-span-3">
           <div className="mb-3 flex items-center justify-between">
             <div className="label !text-text-muted">Candidate-action economics</div>
-            {recommendedAction && <Badge tone="remind">Recommended: {recommendedAction}</Badge>}
+            {recommendedAction && <Badge tone="remind">Model recommendation: {recommendedAction}</Badge>}
           </div>
           {sortedCandidates.length === 0 ? (
             <EmptyPanel title="No candidate-action comparison recorded for this round." />
@@ -352,27 +360,37 @@ export default async function DecisionTracePage({
         <Card id="policy-check" className="p-4 sm:p-5 md:col-span-2">
           <div className="mb-3 flex items-center justify-between">
             <div className="label !text-text-muted">Policy gate</div>
-            <PolicyBadge result={policyResult} />
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-text-faint">Policy decision:</span>
+              <PolicyBadge result={policyResult} />
+            </div>
           </div>
           <PolicyChecklist trace={trace} policyResult={policyResult} />
           <p className="mt-3 border-t border-border pt-2.5 text-xs text-text-muted">{trace.reason}</p>
-          {trace.policy_checks.proposed_action && selectedAction && trace.policy_checks.proposed_action !== selectedAction && (
-            <p className="mt-2 text-xs text-text">
-              Proposed <ActionBadge action={trace.policy_checks.proposed_action} />{" "}
-              {policyResult === "allowed" ? (
-                <>
-                  fell back to <ActionBadge action={selectedAction} /> after a tool failure.
-                </>
-              ) : (
-                <>
-                  overridden to <ActionBadge action={selectedAction} /> by policy.
-                </>
-              )}
-            </p>
-          )}
-          <div className="mt-3 flex items-center gap-2.5 border-t border-border pt-3">
-            <span className="text-xs text-text-muted">Chosen:</span>
-            <ActionBadge action={selectedAction ?? null} />
+
+          {/* Standardized 3(-5)-term decision chain -- Model recommendation is
+              what economics preferred before policy; Policy decision is
+              whether that was permitted; an Execution/Fallback pair appears
+              only for the tool-failure path (policy allowed it, the tool
+              itself failed); Final action is what actually got executed. */}
+          <div className="mt-3 space-y-1.5 border-t border-border pt-3 text-xs">
+            {trace.policy_checks.proposed_action && (
+              <DecisionRow label="Model recommendation" value={<ActionBadge action={trace.policy_checks.proposed_action} />} />
+            )}
+            {toolFailedWithFallback && (
+              <>
+                <DecisionRow
+                  label="Execution"
+                  value={
+                    <span className="text-status-danger">
+                      Failed{typeof retryCount === "number" ? ` after ${retryCount} retry attempt(s)` : ""}
+                    </span>
+                  }
+                />
+                <DecisionRow label="Fallback" value={<ActionBadge action={selectedAction ?? null} />} />
+              </>
+            )}
+            <DecisionRow label="Final action" value={<ActionBadge action={selectedAction ?? null} />} />
           </div>
         </Card>
       </div>
@@ -573,7 +591,7 @@ function EvRow({ candidate, isRecommended }: { candidate: ActionEV; isRecommende
       <td className="px-2 py-2">
         <div className="flex items-center gap-1.5">
           <ActionBadge action={candidate.action_type} />
-          {isRecommended && <span className="text-[10px] font-semibold text-accent-text">★ recommended</span>}
+          {isRecommended && <span className="text-[10px] font-semibold text-accent-text">★ model rec.</span>}
         </div>
       </td>
       <td className="px-2 py-2">
@@ -592,6 +610,19 @@ function EvRow({ candidate, isRecommended }: { candidate: ActionEV; isRecommende
         {formatCurrency(candidate.expected_value)}
       </td>
     </tr>
+  );
+}
+
+// One row of the standardized decision-chain terminology (Model
+// recommendation / Execution / Fallback / Final action) -- kept as its own
+// tiny component so every row lines up identically regardless of which
+// subset applies to a given round.
+function DecisionRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-text-faint">{label}</span>
+      {value}
+    </div>
   );
 }
 

@@ -25,6 +25,16 @@ same invoice_number shows up every time this is rehearsed/recorded:
                           synthetic/seed_demo.py -- same fixture
                           test_resilience.py's forced-failure test uses,
                           now forcing execute_voice, not request_human_handoff)
+  G (correct abstention, added 2026-09-04) -> reliable_payer_wait -- mirrors
+                          A's mechanism (assess, then manually inject a
+                          payment dated after the decision) but for a WAIT
+                          case: proves "assessed high-probability organic
+                          recovery, chose not to spend, was later paid
+                          anyway" without relying on the attribution
+                          experiment's own uncontrolled timing (which broke
+                          this fixture's previous pin -- see
+                          synthetic/demo_fixtures.py's comment for the
+                          full history).
 C (dispute) and E (low economic value) have no matching fixture -- C queries
 for a real disputed live invoice directly; E scans the live pool via Day-3's
 fast run_full_live_pass() (loads tables once, no LLM/embedding calls) for a
@@ -254,6 +264,62 @@ def scenario_e_low_value() -> None:
     print(f"\nVERDICT: {'PASS (illustrative)' if transition.next_state == AccountCurrentState.CLOSED_ABANDONED else 'UNEXPECTED'}")
 
 
+def scenario_g_correct_abstention() -> None:
+    _banner("SCENARIO G -- correct abstention: OVERDUE -> assess -> WAIT (no intervention) -> payment -> CLOSED_PAID")
+    invoice_id = _invoice_id_by_number(FIXTURES["reliable_payer_wait"]["invoice_number"])
+
+    overdue = run_invoice(
+        invoice_id, event=Event(event_type=EventType.INVOICE_OVERDUE, invoice_id=invoice_id, occurred_at=DAY1), persist=True
+    )
+    _step(
+        "assessment",
+        recovery_probability=f"{overdue['recovery_probability']:.3f}",
+        selected_action=overdue["selected_action"].value,
+        next_state=overdue["next_state"].value,
+    )
+    if overdue["selected_action"] != ActionType.WAIT:
+        print(
+            "\nVERDICT: SKIPPED -- this invoice no longer resolves to WAIT on its own economics merit; "
+            "re-pin FIXTURES['reliable_payer_wait'] to a different still-open, high-recovery-probability invoice."
+        )
+        return
+
+    invoice = _invoice_row(invoice_id)
+    # Same DEFAULT_AS_OF-1-day cap as Scenario A, same reason: DAY10
+    # postdates the dataset's frozen "now" for a fresh run of this script.
+    ledger_payment_date = min(DAY10.date(), DEFAULT_AS_OF.date() - timedelta(days=1))
+    session = SessionLocal()
+    try:
+        session.add(
+            Payment(
+                invoice_id=invoice_id,
+                amount=Decimal(str(invoice.amount)),
+                payment_date=ledger_payment_date,
+                # Same rehearsal-marker convention as Scenario A -- lets
+                # synthetic/seed_demo.py's reset_and_reassess() clean up only
+                # this manufactured payment on a rerun, never an organic one.
+                method="scenario_rehearsal",
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    payment_event = Event(
+        event_type=EventType.PAYMENT_RECEIVED,
+        invoice_id=invoice_id,
+        occurred_at=DAY10,
+        payload={"amount": float(invoice.amount), "payment_date": DAY10.date().isoformat(), "method": "bank_transfer"},
+    )
+    paid = run_invoice(invoice_id, event=payment_event, persist=True)
+    _step(
+        "payment received (no intervention preceded it)",
+        next_state=paid["next_state"].value,
+        is_actually_paid=paid["is_actually_paid"],
+    )
+    print(f"\nVERDICT: {'PASS' if paid['next_state'] == AccountCurrentState.CLOSED_PAID else 'UNEXPECTED'}")
+
+
 def scenario_f_tool_failure() -> None:
     _banner("SCENARIO F -- tool/LLM failure: action -> failure -> retry -> fallback -> safe state -> audit")
     invoice_id = _invoice_id_by_number(FIXTURES["chronic_late_escalate"]["invoice_number"])
@@ -297,6 +363,7 @@ def main() -> None:
         scenario_d_already_paid,
         scenario_e_low_value,
         scenario_f_tool_failure,
+        scenario_g_correct_abstention,
     ):
         try:
             scenario()
