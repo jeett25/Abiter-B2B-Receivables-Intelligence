@@ -21,7 +21,6 @@ Every recommendation is explainable end to end: the recovery-probability score, 
 |---|---|
 | **App** |  https://arbiter-brown-five.vercel.app/ |
 | **API** | https://b2b-receivables-intelligence.onrender.com (`/docs` for interactive OpenAPI) |
-| **Video walkthrough** | _add link_ |
 
 > The hosted backend is on Render's free tier and spins down after 15 minutes idle — the first request after a while can take ~30–60s to wake up.
 
